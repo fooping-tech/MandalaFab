@@ -1,0 +1,13 @@
+{
+  "name": "Sacred Geometry",
+  "symmetry": 6,
+  "sheet": { "width": 150, "height": 150, "outline": false, "cornerRadius": 0 },
+  "bridges": { "auto": true, "width": 1.5, "centerCount": "auto", "perIsland": 1, "overlap": 0.3 },
+  "rings": [
+    { "id": "sg-center", "name": "Seed circle", "motif": "circle", "count": 1, "radius": 0, "length": 30, "width": 30, "strokeWidth": 1.6 },
+    { "id": "sg-six", "name": "Circles × 6", "motif": "circle", "count": 6, "radius": 15, "length": 30, "width": 30, "strokeWidth": 1.6 },
+    { "id": "sg-outer", "name": "Circles × 6 (outer)", "motif": "circle", "count": 6, "radius": 30, "length": 30, "width": 30, "strokeWidth": 1.6, "phase": 30 },
+    { "id": "sg-dots", "name": "Dots × 12", "motif": "dot", "count": 12, "radius": 58, "length": 3, "width": 3 },
+    { "id": "sg-arcs", "name": "Arcs × 12", "motif": "arc", "count": 12, "radius": 66, "length": 2.5, "width": 24, "phase": 15 }
+  ]
+}

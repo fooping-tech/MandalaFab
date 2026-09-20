@@ -1,0 +1,13 @@
+{
+  "name": "Snowflake",
+  "symmetry": 6,
+  "sheet": { "width": 150, "height": 150, "outline": false, "cornerRadius": 0 },
+  "rings": [
+    { "id": "snow-center", "name": "Center", "motif": "circle", "count": 1, "radius": 0, "length": 7, "width": 7 },
+    { "id": "snow-arms", "name": "Arms × 6", "motif": "line", "count": 6, "radius": 26, "length": 42, "width": 3 },
+    { "id": "snow-branches", "name": "Branches × 12", "motif": "line", "count": 12, "radius": 34, "length": 12, "width": 2.4, "rotation": 55, "phase": 12, "rotationMode": "radial" },
+    { "id": "snow-diamonds", "name": "Diamonds × 6", "motif": "diamond", "count": 6, "radius": 55, "length": 14, "width": 9 },
+    { "id": "snow-tips", "name": "Tips × 6", "motif": "triangle", "count": 6, "radius": 66, "length": 7, "width": 7 },
+    { "id": "snow-dots", "name": "Dots × 6", "motif": "dot", "count": 6, "radius": 50, "length": 3, "width": 3, "phase": 30 }
+  ]
+}

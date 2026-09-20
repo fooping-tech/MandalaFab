@@ -1,0 +1,13 @@
+{
+  "name": "Sun",
+  "symmetry": 16,
+  "sheet": { "width": 150, "height": 150, "outline": false, "cornerRadius": 0 },
+  "bridges": { "auto": true, "width": 2, "centerCount": "auto", "perIsland": 2, "overlap": 0.3 },
+  "rings": [
+    { "id": "sun-ring", "name": "Center ring", "motif": "circle", "count": 1, "radius": 0, "length": 30, "width": 30, "strokeWidth": 3 },
+    { "id": "sun-core", "name": "Core", "motif": "circle", "count": 1, "radius": 0, "length": 8, "width": 8 },
+    { "id": "sun-rays", "name": "Rays × 16", "motif": "triangle", "count": 16, "radius": 33, "length": 24, "width": 7 },
+    { "id": "sun-lines", "name": "Beams × 16", "motif": "line", "count": 16, "radius": 55, "length": 16, "width": 2.5, "phase": 11.25 },
+    { "id": "sun-dots", "name": "Dots × 32", "motif": "dot", "count": 32, "radius": 66, "length": 2.2, "width": 2.2 }
+  ]
+}
