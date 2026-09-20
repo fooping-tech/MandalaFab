@@ -16,7 +16,7 @@ import { RenderContext } from "../editor/render-context";
 import { useRender } from "../editor/use-render";
 import { useEditor, type EditorStore, type ViewMode } from "../editor/store";
 
-export type DialogName = "generate" | "presets" | "help" | "share" | "import" | null;
+export type DialogName = "generate" | "presets" | "parts" | "help" | "share" | "import" | null;
 
 export interface CanvasApi {
   fit(): void;
@@ -117,7 +117,7 @@ export function App({ store }: { store: EditorStore }) {
         <StatusBar store={store} />
       </div>
       <GenerateDialog store={store} open={dialog === "generate"} onClose={() => setDialog(null)} />
-      <PresetDialog store={store} open={dialog === "presets"} onClose={() => setDialog(null)} />
+      <PresetDialog store={store} open={dialog === "presets" || dialog === "parts"} tab={dialog === "parts" ? "parts" : "builtin"} onClose={() => setDialog(null)} />
       <HelpDialog open={dialog === "help"} onClose={() => setDialog(null)} />
       <ShareDialog store={store} open={dialog === "share"} onClose={() => setDialog(null)} />
       {dialog === "import" && <ImportReferenceDialog store={store} onClose={() => setDialog(null)} />}

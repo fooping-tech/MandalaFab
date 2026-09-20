@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { actionAddElement } from "../editor/actions";
+import { actionAddElement, actionSavePart } from "../editor/actions";
 import {
   addChild,
   addBezierSegment,
@@ -97,6 +97,9 @@ function RingPanel({ store, ring, symmetry }: { store: EditorStore; ring: Ring; 
       <Section title="操作">
         <div className="flex gap-2">
           <SmallButton onClick={() => store.execute(duplicateRing(ring.id))}>複製</SmallButton>
+          <SmallButton onClick={() => actionSavePart(store)} title="このリング（セクタのデザイン）をマイパーツに保存">
+            パーツ保存
+          </SmallButton>
           <SmallButton danger onClick={() => store.execute(removeRing(ring.id))}>
             削除
           </SmallButton>
@@ -223,6 +226,9 @@ function ElementPanel({ store, ring, element: el }: { store: EditorStore; ring: 
           <SmallButton onClick={() => store.execute(makeCompound(ring.id, [el.id], el.name ?? "compound"))} title="この要素を再利用可能な複合モチーフにする">
             複合モチーフ化
           </SmallButton>
+          <SmallButton onClick={() => actionSavePart(store)} title="この要素（入れ子と複合モチーフを含む）をマイパーツに保存">
+            パーツ保存
+          </SmallButton>
           <SmallButton danger onClick={() => store.execute(removeElement(ring.id, el.id))}>
             削除
           </SmallButton>
@@ -330,6 +336,11 @@ function ProjectPanel({ store }: { store: EditorStore }) {
       <ReferencePanel store={store} />
       <Section title="プロジェクト">
         <TextField label="名前" value={project.name} onChange={(name) => store.execute(updateProject({ name }, "名前を変更"))} />
+        <div className="flex gap-2">
+          <SmallButton onClick={() => actionSavePart(store)} title="このプロジェクト全体を自分のプリセットとしてマイパーツに保存">
+            マイパーツに保存
+          </SmallButton>
+        </div>
         <div>
           <span className="mb-0.5 block text-[11px] text-ink-2">対称数（symmetry）</span>
           <div className="flex flex-wrap gap-1">

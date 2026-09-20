@@ -37,6 +37,13 @@ export function HelpDialog({ open, onClose }: { open: boolean; onClose: () => vo
           </p>
         </section>
         <section>
+          <h3 className="mb-1 font-semibold">マイパーツ（自分のプリセット）</h3>
+          <p>
+            要素・リング・プロジェクトを選択して Inspector の「パーツ保存」を押すと、ブラウザ内のライブラリに保存されます。ツールバーの「マイパーツ」から挿入（要素は選択中のリングへ、リングは新しいリングとして、プロジェクトは開く）・名前変更・削除ができます。
+            「書き出し」で <code>.parts.json</code> に保存し、別のブラウザや他の人の環境では「読み込み」で取り込めます。要素が使う複合モチーフは一緒に保存されます。
+          </p>
+        </section>
+        <section>
           <h3 className="mb-1 font-semibold">ショートカット</h3>
           <table className="w-full">
             <tbody>

@@ -161,3 +161,22 @@
 
 - テスト 95 件成功、ビルド成功。Playwright でプリセットダイアログから 4 種を読み込み、コンソールエラーなし。パス数 / ブリッジ: Arch Lace 445 / 0、Scallop Fan Lace 505 / 8、Ainu Morew 153 / 28、Ethnic Border 265 / 24（いずれも島 0、警告は細い材料・細い形状のみ）。
 - 限界: 参考画像と比べると密度は控えめで、Ainu Morew のハートには中心以外にブリッジが残る（隣接要素で閉じる袋）。渦の巻き数を増やすほど帯が細くなるので、小さい要素では `turns` 1 以下が実用的。
+
+## マイパーツ: 自分のプリセットパーツを作成・登録（2026-09-21）
+
+### 要求
+
+- 自分でプリセットパーツを作成して登録できるようにする。
+
+### 実装
+
+- `src/model/library.ts`（純粋 TS）: パーツの種類 `element` / `ring` / `project`。`partFromElement` / `partFromRing` / `partFromProject` は参照している複合モチーフを再帰的に同梱し、深いコピーを保存。`freshIds` で挿入時に id を振り直し（複合モチーフの `ref` も付け替え）。`parseLibrary` / `serializeLibrary` / `normalizeLibraryItem` で `mandalafab.parts.json`（`format: "mandalafab-parts"`, `version: 1`）を読み書き。壊れた項目は捨てる。
+- `src/editor/library-store.ts`: `localStorage["mandalafab-parts-v1"]` に保存する外部ストア（`useSyncExternalStore`）。保存失敗（容量・プライベートモード）は false を返し、UI が通知する。
+- コマンド `insertPartElement` / `insertPartRing`（不足している複合モチーフだけ追加してから要素 / リングを追加）。アクション `actionSavePart`（選択中の要素 / リング、未選択ならプロジェクト全体。名前は prompt）、`actionInsertPart`（要素 → 選択中または最後のリング、リングがなければ空のリングを作る。リング → 新しいリング。プロジェクト → 置き換え）、`actionImportParts` / `actionExportParts`。
+- UI: ツールバー「マイパーツ」。プリセットダイアログをタブ化（組み込み / マイパーツ）。マイパーツはサムネイル（要素は 1 セクタ、リングは全周、プロジェクトはステンシル）・種類バッジ・日付、挿入 / 名前 / 書き出し / 削除、種類フィルタ、読み込み・書き出し・「選択中を保存」。Inspector の要素・リングの「操作」に「パーツ保存」、プロジェクトに「マイパーツに保存」。ヘルプに節を追加。
+- テスト `tests/library.test.ts`（同梱・id 振り直し・往復・不正データ・挿入コマンド・ストア）。README / docs/data-model.md を更新。
+
+### 結果
+
+- テスト 102 件成功、ビルド成功。Playwright: Floral Lace の要素 → リング → プロジェクトを保存（localStorage に 3 件）、ダイアログにカード 3 枚、リングを追加（リング 3 → 4）、要素を挿入、名前変更、削除、プロジェクトを開く、リロード後もカードが残ることを確認。コンソールエラーなし。
+- 限界: パーツはブラウザごとの保存で、複数のブラウザや端末では JSON の書き出し / 読み込みが必要。名前入力はブラウザの prompt。リングのパーツは保存時の半径・繰り返し数のまま追加されるので、挿入後に Inspector で調整する。

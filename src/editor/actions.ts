@@ -7,7 +7,9 @@ import { exportSVG, projectFromSVG } from "../export/svg";
 import { emptyProject, type Project } from "../model/project";
 import { parseProject, normalizeProject } from "../model/validate";
 import { loadPreset } from "../presets";
-import { addElement, addRing, nextRing, removeElement, removeRing, replaceProject } from "./commands";
+import { addElement, addRing, findElementDeep, insertPartElement, insertPartRing, nextRing, removeElement, removeRing, replaceProject } from "./commands";
+import { freshIds, parseLibrary, partFromElement, partFromProject, partFromRing, serializeLibrary, type LibraryItem } from "../model/library";
+import { addLibraryItems, getLibrary } from "./library-store";
 import { newElement, type ElementType } from "../model/project";
 import { pickFile, safeFileName, saveFile } from "./persist";
 import type { RenderData } from "./pipeline";
@@ -43,6 +45,87 @@ export function actionAddElement(store: EditorStore, type: ElementType): void {
   const el = newElement(type, { name: type, y: type === "curl" || type === "scurve" || type === "paisley" ? 5 : 0 });
   store.execute(addElement(ringId, el));
   store.select({ kind: "element", ringId, elementId: el.id });
+}
+
+// ---- user parts library ------------------------------------------------------
+
+/** Save the current selection (element / ring / whole project) to the parts library. */
+export function actionSavePart(store: EditorStore, name?: string): LibraryItem | null {
+  const { project, selection } = store.getState();
+  let item: LibraryItem | null = null;
+  if (selection.kind === "element") {
+    const ring = project.rings.find((r) => r.id === selection.ringId);
+    const el = ring ? findElementDeep(ring.elements, selection.elementId) : undefined;
+    if (!el) return null;
+    const n = name ?? window.prompt("パーツ名", el.name ?? el.type);
+    if (n === null) return null;
+    item = partFromElement(el, project.compounds, n);
+  } else if (selection.kind === "ring") {
+    const ring = project.rings.find((r) => r.id === selection.ringId);
+    if (!ring) return null;
+    const n = name ?? window.prompt("パーツ名（リング）", ring.name);
+    if (n === null) return null;
+    item = partFromRing(ring, project.compounds, n);
+  } else {
+    const n = name ?? window.prompt("パーツ名（プロジェクト全体）", project.name);
+    if (n === null) return null;
+    item = partFromProject(project, n);
+  }
+  const ok = addLibraryItems([item]);
+  if (ok) store.notify(`「${item.name}」をマイパーツに保存しました。`, "success");
+  else store.notify(`「${item.name}」を追加しましたが、ブラウザに保存できませんでした（容量不足やプライベートモード）。書き出しで JSON に保存してください。`, "error");
+  return item;
+}
+
+/** Insert a library part: element → selected/last ring, ring → new ring, project → replace. */
+export function actionInsertPart(store: EditorStore, item: LibraryItem): void {
+  const part = freshIds(item);
+  if (part.kind === "project") {
+    store.execute(replaceProject(part.data, `パーツ: ${part.name}`));
+    store.notify(`「${part.name}」を開きました。`, "success");
+    return;
+  }
+  if (part.kind === "ring") {
+    store.execute(insertPartRing(part.data, part.compounds));
+    store.select({ kind: "ring", ringId: part.data.id });
+    store.notify(`リング「${part.name}」を追加しました。`, "success");
+    return;
+  }
+  const s = store.getState();
+  let ringId = s.selection.kind === "ring" || s.selection.kind === "element" ? s.selection.ringId : s.project.rings[s.project.rings.length - 1]?.id;
+  if (!ringId) {
+    const ring = { ...nextRing(s.project), elements: [] };
+    store.execute(addRing(ring));
+    ringId = ring.id;
+  }
+  store.execute(insertPartElement(ringId, part.data, part.compounds));
+  store.select({ kind: "element", ringId, elementId: part.data.id });
+  store.notify(`「${part.name}」を挿入しました。`, "success");
+}
+
+export async function actionImportParts(store: EditorStore): Promise<void> {
+  const file = await pickFile(".json,application/json");
+  if (!file) return;
+  try {
+    const items = parseLibrary(await file.text());
+    if (items.length === 0) {
+      store.notify("読み込めるパーツがありませんでした。", "error");
+      return;
+    }
+    const ok = addLibraryItems(items);
+    store.notify(ok ? `パーツ ${items.length} 件を読み込みました。` : `パーツ ${items.length} 件を読み込みましたが、ブラウザに保存できませんでした。`, ok ? "success" : "error");
+  } catch (e) {
+    store.notify(e instanceof Error ? e.message : "パーツを読み込めませんでした。", "error");
+  }
+}
+
+export function actionExportParts(store: EditorStore, items: readonly LibraryItem[] = getLibrary()): void {
+  if (items.length === 0) {
+    store.notify("書き出すパーツがありません。", "error");
+    return;
+  }
+  saveFile("mandalafab.parts.json", serializeLibrary(items), "application/json");
+  store.notify(`パーツ ${items.length} 件を書き出しました。`, "success");
 }
 
 export function actionDeleteSelected(store: EditorStore): void {

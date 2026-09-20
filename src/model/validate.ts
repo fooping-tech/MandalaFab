@@ -155,7 +155,7 @@ function normalizeCenter(raw: unknown): CenterMotif {
   };
 }
 
-function normalizeCompound(raw: unknown): CompoundMotif | null {
+export function normalizeCompound(raw: unknown): CompoundMotif | null {
   if (!isRecord(raw)) return null;
   return { id: id(raw.id, "c"), name: str(raw.name, "Compound", 60), elements: normalizeElements(raw.elements) };
 }

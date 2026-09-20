@@ -90,3 +90,19 @@
 ## Constraints / Bridges / Sheet / Share
 
 v1 と同じ。`GeneratorParams` は `{ symmetry, density, seed }`（complexity は廃止）。共有 URL は `#z=<base64url(deflate-raw(JSON))>` または `#p=<base64url(JSON)>`。
+
+## マイパーツ（ユーザーライブラリ）
+
+`src/model/library.ts`。プロジェクト JSON とは別に、ブラウザの `localStorage["mandalafab-parts-v1"]` に配列で保存する。書き出し / 読み込みのファイル形式:
+
+```json
+{ "format": "mandalafab-parts", "version": 1, "items": [
+  { "id": "p…", "kind": "element", "name": "big leaf", "createdAt": "2026-09-21T00:00:00.000Z", "compounds": [ … ], "data": { …SectorElement… } },
+  { "id": "p…", "kind": "ring",    "name": "Band 2",   "createdAt": "…", "compounds": [ … ], "data": { …Ring… } },
+  { "id": "p…", "kind": "project", "name": "My Lace",  "createdAt": "…", "compounds": [],    "data": { …Project… } }
+] }
+```
+
+- `compounds` には要素 / リングが参照する `CompoundMotif` を再帰的に同梱する（別プロジェクトへ挿入しても壊れない）。
+- 挿入時は `freshIds()` で要素・リング・複合モチーフの id を振り直し、`ref` も同時に付け替える。プロジェクトに同じ id の複合モチーフがあれば追加しない（`insertPartElement` / `insertPartRing`）。
+- 読み込みは `parseLibrary()` → `normalizeLibraryItem()` を必ず通す（要素は `normalizeElement`、リングは `normalizeRing`、プロジェクトは `normalizeProject`）。壊れた項目は捨てる。ファイル・配列・単一項目のいずれも受け付ける。

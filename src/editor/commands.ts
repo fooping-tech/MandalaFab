@@ -293,6 +293,26 @@ export const updateCenter = (patch: Partial<CenterMotif>): Command => ({
 
 export const replaceProject = (project: Project, label = "プロジェクトを読み込み"): Command => ({ label, apply: () => project });
 
+// ---- user parts ------------------------------------------------------------
+
+/** Add compounds the project does not have yet (matched by id). */
+function mergeCompounds(current: CompoundMotif[], added: readonly CompoundMotif[]): CompoundMotif[] {
+  const missing = added.filter((c) => !current.some((x) => x.id === c.id));
+  return missing.length === 0 ? current : [...current, ...missing];
+}
+
+/** Insert a saved element part (plus the compounds it needs) into a ring. */
+export const insertPartElement = (ringId: string, element: SectorElement, compounds: readonly CompoundMotif[]): Command => ({
+  label: "パーツを挿入",
+  apply: (p) => addElement(ringId, element).apply({ ...p, compounds: mergeCompounds(p.compounds, compounds) }),
+});
+
+/** Insert a saved ring part (plus the compounds it needs) as a new ring. */
+export const insertPartRing = (ring: Ring, compounds: readonly CompoundMotif[], index?: number): Command => ({
+  label: "リングのパーツを追加",
+  apply: (p) => addRing(ring, index).apply({ ...p, compounds: mergeCompounds(p.compounds, compounds) }),
+});
+
 export const updateProject = (patch: Partial<Pick<Project, "name" | "symmetry" | "seed" | "generator">>, label = "プロジェクト設定"): Command => ({
   label,
   coalesceKey: `project:${keys(patch)}`,

@@ -41,6 +41,7 @@ export function Toolbar({ store, openDialog, canvasApi }: Props) {
       <Sep />
       <Btn icon="✦" label="新規" onClick={() => actionNew(store)} />
       <Btn icon="▤" label="プリセット" onClick={() => openDialog("presets")} />
+      <Btn icon="▣" label="マイパーツ" onClick={() => openDialog("parts")} title="自分で保存した要素・リング・プロジェクトを挿入 / 管理" />
       <Btn icon="⚄" label="生成" onClick={() => openDialog("generate")} />
       <Btn icon="⌂" label="開く" onClick={() => void actionOpen(store)} title="JSON / MandalaFab SVG を開く (⌘O)" />
       <Btn icon="⬇" label="保存" onClick={() => actionSaveJSON(store)} title="プロジェクトJSONを保存 (⌘S)" />
