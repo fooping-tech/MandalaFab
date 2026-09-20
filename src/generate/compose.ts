@@ -16,8 +16,8 @@
  * Sector coordinates: +x outward, +y tangential, origin at ring.radius on the
  * sector axis, mandala center at (-R, 0).
  */
-import { emptyProject, newElement, newId, type CenterMotif, type ElementType, type OrnamentRole, type Project, type Ring, type SectorElement } from "../model/project";
-import { elementLocalRegions, elementTransform, mirrorRegionY, transformRegion } from "../geometry/elements/sector";
+import { emptyProject, newElement, newId, type CenterMotif, type CompoundMotif, type ElementType, type OrnamentRole, type Project, type Ring, type SectorElement } from "../model/project";
+import { buildSector, elementLocalRegions, elementTransform, mirrorRegionY, transformRegion } from "../geometry/elements/sector";
 import { generateRing } from "../geometry/radial/mandala";
 import { instanceTransform } from "../geometry/radial/repeat";
 import { invertTransform } from "../geometry/radial/transform";
@@ -39,9 +39,30 @@ export interface BandLayout {
   interlock: number;
 }
 
+/** A user part (マイパーツ element) offered to the composer. */
+export interface PartCandidate {
+  id: string;
+  name: string;
+  element: SectorElement;
+  /** Compound motifs the element references (already merged into the project being composed). */
+  compounds: CompoundMotif[];
+  /** Relative pick weight (0 = excluded). */
+  weight: number;
+}
+
+export interface PartsSettings {
+  candidates: PartCandidate[];
+  /** Probability that a user part is tried at each primary / secondary / filler opportunity, 0..1. */
+  frequency: number;
+}
+
 export interface ComposeSettings {
   symmetry: number;
   density: number;
+  /** User parts to mix in (optional). */
+  parts?: PartsSettings;
+  /** Compound motifs available while building candidate regions. */
+  compounds?: readonly CompoundMotif[];
   /** Minimum material gap to keep between separate cut shapes (mm). */
   gap: number;
   /** Material left at sector boundaries between connected curves (mm). */
@@ -121,10 +142,81 @@ export class SectorContext {
 
   /** Sector-frame regions of an element (all local copies, no mirror). */
   regionsOf(el: SectorElement): Region[] {
+    if (hasCompound(el)) {
+      // Compound references need the project's compounds: build a one-element sector.
+      const ring: Ring = { id: "tmp", name: "tmp", visible: true, radius: this.R, repeat: this.band.repeat, phase: 0, mirrorLocal: false, elements: [el] };
+      const res = buildSector(ring, { compounds: [...(this.settings.compounds ?? [])], constraints: { minFeatureWidth: this.settings.minFeatureWidth, minBridgeWidth: 1, minGap: this.settings.gap, minHoleDiameter: 1 } });
+      return res.elements.filter((e) => e.mode === "cut").flatMap((e) => e.regions);
+    }
     const worldR = Math.hypot(el.x + this.R, el.y);
     const local = elementLocalRegions(el, worldR, this.settings.minFeatureWidth, []);
     const t = elementTransform(el, this.R);
     return local.map((r) => transformRegion(r, t));
+  }
+
+  // ---- user parts ------------------------------------------------------------
+
+  private partInfo = new Map<string, { length: number; width: number; cx: number; cy: number; symmetric: boolean }>();
+
+  /** Size (bounding box in mm at scale 1, rotation 0) and axis symmetry of a candidate, cached. */
+  partSize(cand: PartCandidate): { length: number; width: number; cx: number; cy: number; symmetric: boolean } {
+    const hit = this.partInfo.get(cand.id);
+    if (hit) return hit;
+    const probe = { ...cand.element, x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1, mirror: false, repeat: 1 } as SectorElement;
+    const regs = this.regionsOf(probe);
+    let info = { length: Math.max(1, cand.element.length), width: Math.max(1, cand.element.width), cx: 0, cy: 0, symmetric: false };
+    if (regs.length > 0) {
+      const b = bounds(regs.map((r) => r.outer));
+      const area = regionArea(regs);
+      const overlap = area > 0 ? regionArea(intersection(regs, regs.map(mirrorRegionY))) / area : 0;
+      info = { length: Math.max(1, b.maxX - b.minX), width: Math.max(1, b.maxY - b.minY), cx: (b.minX + b.maxX) / 2, cy: (b.minY + b.maxY) / 2, symmetric: overlap > 0.97 };
+    }
+    this.partInfo.set(cand.id, info);
+    return info;
+  }
+
+  /**
+   * Decide whether a user part is used at this opportunity (probability = frequency)
+   * and pick one by weight. Consumes the rng only when parts are configured, so
+   * compositions without parts are unchanged.
+   */
+  pickPart(): PartCandidate | null {
+    const parts = this.settings.parts;
+    if (!parts || parts.frequency <= 0) return null;
+    const pool = parts.candidates.filter((c) => c.weight > 0);
+    if (pool.length === 0) return null;
+    if (this.rng() >= parts.frequency) return null;
+    const total = pool.reduce((s, c) => s + c.weight, 0);
+    let r = this.rng() * total;
+    for (const c of pool) {
+      r -= c.weight;
+      if (r <= 0) return c;
+    }
+    return pool[pool.length - 1]!;
+  }
+
+  /**
+   * A copy of the part element scaled so its bounding length is `targetLength`
+   * (uniform scale, children included), placed at `x, y` with `rotation` added to
+   * the saved one. Fresh ids for the element and its children.
+   */
+  partElement(cand: PartCandidate, role: OrnamentRole, spot: { x: number; y: number; rotation: number; targetLength: number; maxWidth?: number }): SectorElement {
+    const info = this.partSize(cand);
+    let s = spot.targetLength / info.length;
+    if (spot.maxWidth !== undefined) s = Math.min(s, spot.maxWidth / info.width);
+    s = Math.max(0.15, Math.min(4, s));
+    const renew = (e: SectorElement): SectorElement => {
+      const copy = { ...e, id: newId("e"), params: { ...e.params } } as SectorElement;
+      if (copy.children && copy.children.length > 0) copy.children = copy.children.map(renew);
+      return copy;
+    };
+    const el = renew(cand.element);
+    return { ...el, name: cand.name, role, x: r1(spot.x), y: r1(spot.y), rotation: r1(spot.rotation + cand.element.rotation), scaleX: r1(cand.element.scaleX * s), scaleY: r1(cand.element.scaleY * s), repeat: 1 } as SectorElement;
+  }
+
+  /** Try to place a user part like `add()` (collision-checked, nudged). */
+  addPart(cand: PartCandidate, role: OrnamentRole, spot: { x: number; y: number; rotation: number; targetLength: number; maxWidth?: number }, opts: AddOptions = {}): SectorElement | null {
+    return this.place(this.partElement(cand, role, spot), opts);
   }
 
   /**
@@ -188,6 +280,11 @@ export class SectorContext {
    */
   add(role: OrnamentRole, type: ElementType, partial: Partial<SectorElement>, opts: AddOptions = {}): SectorElement | null {
     const el = newElement(type, { ...partial, role, id: newId("e") } as Partial<SectorElement>);
+    return this.place(el, opts);
+  }
+
+  /** Collision-checked placement of a ready-made element (see `add`). */
+  place(el: SectorElement, opts: AddOptions = {}): SectorElement | null {
     let regions = this.regionsOf(el);
     if (opts.attach) return this.commit(el, regions);
     const gap = this.settings.gap;
@@ -212,7 +309,7 @@ export class SectorContext {
       for (const d of [0, 1.2, 2.5, 4, 6]) {
         for (const dir of dirs) {
           if (d === 0 && dir !== dirs[0]) continue;
-          const moved = { ...el, x: r1(el.x + dir.x * d), y: r1(el.y + dir.y * d), length: r1(el.length * scale), width: r1(el.width * scale) } as SectorElement;
+          const moved = resized({ ...el, x: r1(el.x + dir.x * d), y: r1(el.y + dir.y * d) } as SectorElement, scale);
           if (scale === 1 && d === 0) continue;
           regions = this.regionsOf(moved);
           if (this.fits(regions, gap, sym)) return this.commit(moved, regions);
@@ -224,6 +321,22 @@ export class SectorContext {
   }
 }
 
+/** True when the element (or a nested child) references a compound motif. */
+function hasCompound(el: SectorElement): boolean {
+  if (el.type === "compound") return true;
+  return !!el.children && el.children.some(hasCompound);
+}
+
+/**
+ * Shrink an element by `scale`: nested user parts scale uniformly (children follow),
+ * plain elements scale their length / width.
+ */
+function resized(el: SectorElement, scale: number): SectorElement {
+  if (scale === 1) return el;
+  if (el.children && el.children.length > 0) return { ...el, scaleX: r1(el.scaleX * scale), scaleY: r1(el.scaleY * scale) } as SectorElement;
+  return { ...el, length: r1(el.length * scale), width: r1(el.width * scale) } as SectorElement;
+}
+
 /**
  * Place a primary motif: it must clear the obstacles (previous band, center) and,
  * for off-axis primaries, its own mirror image. It is pushed outward / sideways
@@ -231,15 +344,57 @@ export class SectorContext {
  */
 function placePrimary(ctx: SectorContext, role: OrnamentRole, type: ElementType, partial: Partial<SectorElement>, offAxis: boolean): SectorElement {
   const base = newElement(type, { ...partial, role, id: newId("e") } as Partial<SectorElement>);
+  const placed = placePrimaryElement(ctx, base, offAxis);
+  if (placed) return placed;
+  const small = { ...partial, length: r1((partial.length ?? 10) * 0.55), width: r1((partial.width ?? 5) * 0.55) };
+  return ctx.add(role, type, small, { attach: true })!;
+}
+
+/** Shrink / shift loop shared by built-in and user-part primaries. Null when nothing fits. */
+function placePrimaryElement(ctx: SectorContext, base: SectorElement, offAxis: boolean): SectorElement | null {
   for (const scale of [1, 0.92, 0.84, 0.76, 0.68, 0.6]) {
     for (const shift of [0, 0.6, 1.2, 1.8, 2.5, 3.2, 4, -0.6, -1.2]) {
-      const cand = { ...base, x: r1(base.x + (offAxis ? 0 : shift)), y: r1(base.y + (offAxis ? shift : 0)), length: r1(base.length * scale), width: r1(base.width * scale) } as SectorElement;
+      const cand = resized({ ...base, x: r1(base.x + (offAxis ? 0 : shift)), y: r1(base.y + (offAxis ? shift : 0)) } as SectorElement, scale);
       const regions = ctx.regionsOf(cand);
       if (ctx.fits(regions, ctx.settings.gap, !offAxis)) return ctx.commitPublic(cand, regions);
     }
   }
-  const small = { ...partial, length: r1((partial.length ?? 10) * 0.55), width: r1((partial.width ?? 5) * 0.55) };
-  return ctx.add(role, type, small, { attach: true })!;
+  return null;
+}
+
+/**
+ * User part as the primary motif. Axis-symmetric parts sit on the axis; asymmetric
+ * ones go to the y > 0 side so the sector mirror makes a facing pair (like the paisley).
+ * Falls back to the built-in primary when the part cannot be placed.
+ */
+function primaryPart(ctx: SectorContext, cand: PartCandidate, fallback: () => PrimarySpec): PrimarySpec {
+  const u0 = 0.05;
+  const u1 = 0.98;
+  const L = ctx.range * (u1 - u0);
+  const rhoBelly = ctx.rho(u0 + 0.35 * (u1 - u0));
+  const info = ctx.partSize(cand);
+  const gap = ctx.settings.gap;
+  const offAxis = !info.symmetric;
+  const W = offAxis ? Math.max(3, Math.min(ctx.halfWidth(rhoBelly) - 1.8 * gap, L * 0.6)) : primaryWidthLimit(ctx, rhoBelly, L);
+  const s = Math.max(0.15, Math.min(4, Math.min(L / info.length, W / info.width)));
+  const width = info.width * s;
+  const el = ctx.partElement(cand, "primary", { x: ctx.axis(ctx.rho((u0 + u1) / 2)).x - info.cx * s, y: offAxis ? width / 2 + gap * 0.9 - info.cy * s : 0, rotation: 0, targetLength: info.length * s });
+  const placed = placePrimaryElement(ctx, el, offAxis);
+  if (!placed) return fallback();
+  const k = placed.scaleX / Math.max(1e-6, cand.element.scaleX);
+  const len = info.length * k;
+  const hw = (info.width * k) / 2;
+  const cx = placed.x + info.cx * k;
+  const cy = placed.y + info.cy * k;
+  const base = { x: cx - len / 2, y: cy };
+  const tip = { x: cx + len / 2, y: cy };
+  return { el: placed, base, tip, halfWidth: hw + Math.max(0, cy), shoulder: { x: base.x + len * 0.3, y: cy + hw + ctx.settings.gap * 0.6 }, shoulderTangent: { x: 0.25, y: 0.97 }, attachable: false };
+}
+
+/** The primary for a template: a user part when the frequency roll says so, else the built-in. */
+function primaryFor(ctx: SectorContext, fallback: () => PrimarySpec): PrimarySpec {
+  const cand = ctx.pickPart();
+  return cand ? primaryPart(ctx, cand, fallback) : fallback();
 }
 
 // ---------------------------------------------------------------------------
@@ -316,6 +471,14 @@ function placeOnSpine(ctx: SectorContext, role: OrnamentRole, sp: Spine, t: numb
   const along = o.along ?? 0;
   const pos = { x: p.x + n.x * off + tg.x * along, y: p.y + n.y * off + tg.y * along };
   const rot = SectorContext.angleDeg(tg) + (o.angle ?? 0) * side;
+  // Secondary slots on a vine are where user parts show best: try one first (frequency roll).
+  if (role === "secondary") {
+    const cand = ctx.pickPart();
+    if (cand) {
+      const placed = ctx.addPart(cand, role, { x: r1(pos.x), y: r1(pos.y), rotation: r1(rot), targetLength: r1(o.length), maxWidth: r1(o.width * 1.4) });
+      if (placed) return placed;
+    }
+  }
   return ctx.add(role, type, { name: o.name ?? type, x: r1(pos.x), y: r1(pos.y), rotation: r1(rot), length: r1(o.length), width: r1(o.width), strokeWidth: o.strokeWidth ?? 0, params: o.params ?? {} } as Partial<SectorElement>);
 }
 
@@ -331,6 +494,8 @@ interface PrimarySpec {
   /** Shoulder on the y >= 0 side where flow curves start, with their initial direction. */
   shoulder: Vec2;
   shoulderTangent: Vec2;
+  /** False for user parts: attached curves must pass the collision check so they cannot slice the part's interior. */
+  attachable?: boolean;
 }
 
 /** Largest primary width that leaves `gap` to the previous band's tip at the boundary. */
@@ -428,7 +593,7 @@ const bandWidth = (ctx: SectorContext): number => Math.max(1.3, Math.min(2.4, ct
 /** Vine from the primary shoulder to the boundary (attached at the shoulder), decorated along its length. */
 function shoulderVine(ctx: SectorContext, pr: PrimarySpec, uEnd: number, width: number, deco: { leaf?: boolean; drop?: boolean; hook?: boolean; dots?: number }): Spine {
   const sp = boundarySpine(ctx, pr.shoulder, pr.shoulderTangent, ctx.rho(uEnd), ctx.settings.boundaryGap / 2, 0.42);
-  addSpine(ctx, "boundary", sp, width, 0.45, "vine to boundary", { attach: true });
+  addSpine(ctx, "boundary", sp, width, 0.45, "vine to boundary", { attach: pr.attachable !== false });
   const L = ctx.range;
   // Left normal of a spine that leaves the primary toward +y points away from the primary.
   if (deco.leaf) placeOnSpine(ctx, "secondary", sp, 0.4, "leaf", { side: 1, offset: L * 0.19, angle: 50, length: L * 0.34, width: L * 0.13, name: "leaf on vine", params: { tipSharpness: 0.85, bend: 0.25 } });
@@ -473,6 +638,8 @@ function tipCurl(ctx: SectorContext, pr: PrimarySpec, width: number, type: "tend
 /** Secondary petal / leaf beside the tip. */
 function tipLeaf(ctx: SectorContext, pr: PrimarySpec, type: "petal" | "leaf"): void {
   const L = ctx.range;
+  const cand = ctx.pickPart();
+  if (cand && ctx.addPart(cand, "secondary", { x: r1(pr.tip.x - L * 0.08), y: r1(pr.halfWidth * 0.7 + ctx.settings.gap + L * 0.08), rotation: 48, targetLength: r1(L * 0.3), maxWidth: r1(L * 0.18) })) return;
   ctx.add("secondary", type, { name: `${type} at tip`, x: r1(pr.tip.x - L * 0.08), y: r1(pr.halfWidth * 0.7 + ctx.settings.gap + L * 0.08), rotation: 48, length: r1(L * 0.3), width: r1(L * 0.13), params: type === "petal" ? { bulge: 1, shoulder: 0.35 } : { tipSharpness: 0.9, bend: 0.3 } } as Partial<SectorElement>);
 }
 
@@ -483,6 +650,8 @@ function wedgeFillers(ctx: SectorContext, count: number): void {
     const u = 0.25 + 0.6 * (i / Math.max(1, count - 1));
     const p = ctx.polar(ctx.rho(u), 0.66);
     const out = ctx.outward(p);
+    const cand = ctx.pickPart();
+    if (cand && ctx.addPart(cand, "filler", { x: r1(p.x), y: r1(p.y), rotation: r1(SectorContext.angleDeg(out)), targetLength: r1(L * 0.22), maxWidth: r1(L * 0.14) })) continue;
     const drop = i % 2 === 0;
     ctx.add("filler", drop ? "teardrop" : "dot", { name: drop ? "drop" : "dot", x: r1(p.x), y: r1(p.y), rotation: r1(SectorContext.angleDeg(out)), length: r1(drop ? L * 0.2 : 1.9), width: r1(drop ? L * 0.09 : 1.9), params: { tipSharpness: 0.8, curvature: 0 } } as Partial<SectorElement>);
   }
@@ -525,7 +694,7 @@ function ensureFlows(ctx: SectorContext, pr: PrimarySpec, width: number, min: nu
   if (!enough() && pr.tip.x - pr.base.x > 8) {
     const from = { x: pr.tip.x - L * 0.3, y: pr.halfWidth * 0.75 };
     const sp = boundarySpine(ctx, from, { x: 0.35, y: 0.94 }, ctx.rho(0.72), ctx.settings.boundaryGap / 2, 0.4);
-    addSpine(ctx, "boundary", sp, width * 0.85, 0.5, "tip vine", { attach: true });
+    addSpine(ctx, "boundary", sp, width * 0.85, 0.5, "tip vine", { attach: pr.attachable !== false });
     placeOnSpine(ctx, "filler", sp, 0.5, "dot", { side: -1, offset: L * 0.1, length: 1.8, width: 1.8, name: "dot" });
   }
   for (const sp of spots) {
@@ -564,10 +733,22 @@ function ensureSecondaries(ctx: SectorContext, min: number): void {
     { u: 0.5, v: 0.72, type: "teardrop" },
     { u: 0.1, v: 0.38, type: "petal" },
   ];
+  // With user parts enabled, the secondary stage also owes a few part placements
+  // (templates usually have their two secondaries already, so the stage would be skipped).
+  const parts = ctx.settings.parts;
+  const partTarget = parts && parts.frequency > 0 ? Math.round(1 + 2 * parts.frequency) : 0;
+  let partPlaced = 0;
   for (const sp of spots) {
-    if (countRole(ctx, "secondary") >= min) return;
+    const enoughBuiltIn = countRole(ctx, "secondary") >= min;
+    if (enoughBuiltIn && partPlaced >= partTarget) return;
     const p = ctx.polar(ctx.rho(sp.u), sp.v);
     const out = ctx.outward(p);
+    const cand = partPlaced < partTarget ? ctx.pickPart() : null;
+    if (cand && ctx.addPart(cand, "secondary", { x: r1(p.x), y: r1(p.y), rotation: r1(SectorContext.angleDeg(out) + ctx.rnd(-30, 30)), targetLength: r1(L * 0.3), maxWidth: r1(L * 0.22) })) {
+      partPlaced++;
+      continue;
+    }
+    if (enoughBuiltIn) continue;
     ctx.add("secondary", sp.type, { name: sp.type, x: r1(p.x), y: r1(p.y), rotation: r1(SectorContext.angleDeg(out) + ctx.rnd(-30, 30)), length: r1(L * 0.28), width: r1(L * 0.12), params: sp.type === "petal" ? { bulge: 1, shoulder: 0.35 } : sp.type === "leaf" ? { tipSharpness: 0.85, bend: 0.2 } : { tipSharpness: 0.8, curvature: 0 } } as Partial<SectorElement>);
   }
 }
@@ -592,6 +773,17 @@ function fillFreeSpace(ctx: SectorContext, maxCount: number): void {
     [cells[i], cells[j]] = [cells[j]!, cells[i]!];
   }
   let placed = 0;
+  // User parts first (small), then the built-in lace fillers.
+  if (ctx.settings.parts && ctx.settings.parts.frequency > 0) {
+    for (const c of cells) {
+      if (placed >= maxCount) return;
+      const cand = ctx.pickPart();
+      if (!cand) continue;
+      const p = ctx.polar(ctx.rho(c.u), c.v);
+      const out = ctx.outward(p);
+      if (ctx.addPart(cand, "filler", { x: r1(p.x), y: r1(p.y), rotation: r1(SectorContext.angleDeg(out) + ctx.rnd(-25, 25)), targetLength: r1(L * 0.22), maxWidth: r1(L * 0.14) }, { nudge: false })) placed++;
+    }
+  }
   for (const kind of kinds) {
     for (const c of cells) {
       if (placed >= maxCount) return;
@@ -611,7 +803,7 @@ export type CompositionTemplate = (ctx: SectorContext) => void;
 
 export const floralArabesque: CompositionTemplate = (ctx) => {
   const w = bandWidth(ctx);
-  const pr = primaryNested(ctx, "teardrop");
+  const pr = primaryFor(ctx, () => primaryNested(ctx, "teardrop"));
   shoulderVine(ctx, pr, 0.6, w, { leaf: true, drop: ctx.density > 0.5, dots: 2 });
   baseScroll(ctx, pr, w * 0.9, "ccurve");
   tipCurl(ctx, pr, w * 0.85, "tendril");
@@ -626,7 +818,7 @@ export const floralArabesque: CompositionTemplate = (ctx) => {
 
 export const paisleyVine: CompositionTemplate = (ctx) => {
   const w = bandWidth(ctx);
-  const pr = primaryPaisley(ctx);
+  const pr = primaryFor(ctx, () => primaryPaisley(ctx));
   const L = ctx.range;
   shoulderVine(ctx, pr, 0.58, w, { leaf: true, dots: 2, hook: ctx.density > 0.5 });
   // Second boundary vine sweeping under the paisley base at a lower radius.
@@ -645,7 +837,7 @@ export const paisleyVine: CompositionTemplate = (ctx) => {
 
 export const lotusScroll: CompositionTemplate = (ctx) => {
   const w = bandWidth(ctx);
-  const pr = primaryNested(ctx, "lotus");
+  const pr = primaryFor(ctx, () => primaryNested(ctx, "lotus"));
   shoulderVine(ctx, pr, 0.62, w, { drop: true, dots: 2 });
   baseScroll(ctx, pr, w * 0.9, "opposedcurl");
   tipLeaf(ctx, pr, "leaf");
@@ -659,7 +851,7 @@ export const lotusScroll: CompositionTemplate = (ctx) => {
 
 export const gothicFloral: CompositionTemplate = (ctx) => {
   const w = bandWidth(ctx);
-  const pr = primaryNested(ctx, "leaf");
+  const pr = primaryFor(ctx, () => primaryNested(ctx, "leaf"));
   shoulderVine(ctx, pr, 0.66, w, { leaf: true, dots: 1 });
   baseScroll(ctx, pr, w * 0.85, "doublecurl");
   tipLeaf(ctx, pr, "petal");
@@ -673,7 +865,7 @@ export const gothicFloral: CompositionTemplate = (ctx) => {
 
 export const laceFlower: CompositionTemplate = (ctx) => {
   const w = bandWidth(ctx);
-  const pr = primaryNested(ctx, "teardrop");
+  const pr = primaryFor(ctx, () => primaryNested(ctx, "teardrop"));
   const L = ctx.range;
   const sp = shoulderVine(ctx, pr, 0.58, w, { leaf: true, drop: true });
   placeOnSpine(ctx, "filler", sp, 0.9, "dot", { side: -1, offset: L * 0.12, length: 1.8, width: 1.8, name: "dot" });
@@ -691,7 +883,7 @@ export const laceFlower: CompositionTemplate = (ctx) => {
 
 export const ornamentalVine: CompositionTemplate = (ctx) => {
   const w = bandWidth(ctx);
-  const pr = primaryPaisley(ctx);
+  const pr = primaryFor(ctx, () => primaryPaisley(ctx));
   const L = ctx.range;
   shoulderVine(ctx, pr, 0.62, w, { leaf: true, drop: true, dots: 2, hook: true });
   ctx.add("flow", "vine", { name: "vine", x: r1(pr.base.x + L * 0.3), y: r1(-pr.halfWidth * 0.55 - ctx.settings.gap - L * 0.12), rotation: -18, length: r1(L * 0.55), width: r1(L * 0.18), strokeWidth: r1(w * 0.85), params: { tip: 0.3, waves: 2 } } as Partial<SectorElement>);
@@ -718,6 +910,8 @@ export interface ComposeParams {
   /** Template per band (cycled). Random when omitted. */
   templates?: string[];
   name?: string;
+  /** User parts to mix in. Their compounds are merged into the generated project. */
+  parts?: PartsSettings;
 }
 
 export function layoutBands(sheetRadius: number, centerOuter: number, density: number, symmetry: number): BandLayout[] {
@@ -773,6 +967,15 @@ export function composeMandala(params: ComposeParams, base?: Partial<Project>): 
   project.symmetry = sym;
   project.seed = params.seed;
   project.generator = { symmetry: sym, density, seed: params.seed };
+  // User parts: merge the compounds they need (by id) so their references resolve.
+  const parts = params.parts && params.parts.frequency > 0 && params.parts.candidates.some((c) => c.weight > 0) ? params.parts : undefined;
+  if (parts) {
+    const compounds = [...project.compounds];
+    for (const c of parts.candidates) for (const comp of c.compounds) if (!compounds.some((x) => x.id === comp.id)) compounds.push(comp);
+    project.compounds = compounds;
+    project.generator.partsFrequency = Math.min(1, Math.max(0, parts.frequency));
+    project.generator.partWeights = Object.fromEntries(parts.candidates.map((c) => [c.id, c.weight]));
+  }
   const sheetRadius = Math.min(project.sheet.width, project.sheet.height) / 2;
   const centerOuter = Math.round(sheetRadius * (0.17 + 0.05 * density));
   const centerInner = Math.max(2.5, Math.round(centerOuter * 0.34));
@@ -796,6 +999,8 @@ export function composeMandala(params: ComposeParams, base?: Partial<Project>): 
     boundaryGap: Math.max(project.constraints.minGap * 1.3, project.bridges.width),
     minFeatureWidth: project.constraints.minFeatureWidth,
     maxRho: sheetRadius - Math.max(2, sheetRadius * 0.02),
+    parts,
+    compounds: project.compounds,
   };
   const bands = layoutBands(sheetRadius, centerOuter, density, sym);
   const names = params.templates && params.templates.length > 0 ? params.templates : shuffled(TEMPLATE_NAMES, rng);

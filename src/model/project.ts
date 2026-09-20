@@ -202,6 +202,10 @@ export interface GeneratorParams {
   symmetry: number;
   density: number;
   seed: number;
+  /** How often user parts (マイパーツ) are tried for primary / secondary / filler slots, 0..1 (0 or absent = never). */
+  partsFrequency?: number;
+  /** Relative weight of each user part by library id (0 = excluded). */
+  partWeights?: Record<string, number>;
 }
 
 export interface Project {

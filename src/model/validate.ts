@@ -272,6 +272,12 @@ export function normalizeProject(raw: unknown): Project {
       density: num(gen.density, 0.5, 0, 1),
       seed: Math.floor(num(gen.seed, 1, 0, 2 ** 32)),
     };
+    if (typeof gen.partsFrequency === "number" && Number.isFinite(gen.partsFrequency)) project.generator.partsFrequency = num(gen.partsFrequency, 0, 0, 1);
+    if (isRecord(gen.partWeights)) {
+      const weights: Record<string, number> = {};
+      for (const [k, v] of Object.entries(gen.partWeights).slice(0, 500)) if (/^[A-Za-z0-9_-]{1,60}$/.test(k) && typeof v === "number" && Number.isFinite(v)) weights[k] = num(v, 1, 0, 4);
+      project.generator.partWeights = weights;
+    }
   }
   return project;
 }
