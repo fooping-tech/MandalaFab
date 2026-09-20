@@ -26,7 +26,16 @@ export type ElementType =
   | "circle"
   | "connector"
   | "shape"
-  | "compound";
+  | "compound"
+  | "ccurve"
+  | "hook"
+  | "vine"
+  | "doublecurl"
+  | "opposedcurl"
+  | "tendril";
+
+/** Ornamental role of an element inside a sector composition (for the tree, stats and tests). */
+export type OrnamentRole = "primary" | "secondary" | "flow" | "filler" | "boundary";
 
 export type BooleanMode = "cut" | "keep";
 export type Orientation = "sector" | "radial";
@@ -69,6 +78,13 @@ export interface ElementBase {
   insetStem: number;
   /** Type-specific numeric parameters. */
   params: Record<string, number>;
+  /** Ornamental role (optional, informational). */
+  role?: OrnamentRole;
+  /**
+   * Nested ornament: elements placed in this element's local frame and combined with it
+   * (keep children leave material inside the parent cut, cut children cut into that material).
+   */
+  children?: SectorElement[];
 }
 
 export interface BezierElement extends ElementBase {
@@ -100,8 +116,11 @@ export interface CompoundElement extends ElementBase {
 }
 
 export interface SimpleElement extends ElementBase {
-  type: "teardrop" | "leaf" | "petal" | "spiral" | "scurve" | "curl" | "paisley" | "arc" | "dot" | "circle";
+  type: "teardrop" | "leaf" | "petal" | "spiral" | "scurve" | "curl" | "paisley" | "arc" | "dot" | "circle" | "ccurve" | "hook" | "vine" | "doublecurl" | "opposedcurl" | "tendril";
 }
+
+/** Element types whose closed contours are tapered bands (strokeWidth = base width, not an outline). */
+export const BAND_TYPES: ReadonlySet<ElementType> = new Set<ElementType>(["ccurve", "hook", "vine", "doublecurl", "opposedcurl", "tendril"]);
 
 export type SectorElement = BezierElement | ConnectorElement | ShapeElement | CompoundElement | SimpleElement;
 
@@ -238,6 +257,12 @@ export const ELEMENT_TYPES: readonly { type: ElementType; label: string; descrip
   { type: "paisley", label: "Paisley", description: "勾玉・ペイズリー。内側に材料を残す innerGap 付き。" },
   { type: "scurve", label: "S-Curve", description: "S字曲線（線幅で帯にする）。" },
   { type: "curl", label: "Curl", description: "先端が渦を巻く曲線。" },
+  { type: "ccurve", label: "C-Curve", description: "テーパー付きの C 字帯。" },
+  { type: "hook", label: "Hook", description: "茎の先が小さく巻く鉤（テーパー帯）。" },
+  { type: "vine", label: "Vine", description: "うねる蔓（テーパー帯、波数指定）。" },
+  { type: "doublecurl", label: "Double Curl", description: "両端が同じ向きに巻く S 字帯。" },
+  { type: "opposedcurl", label: "Opposed Curl", description: "1本の茎から逆向きに 2 つ巻く帯。" },
+  { type: "tendril", label: "Tendril", description: "細く長く伸びて先端が強く巻く巻きひげ。" },
   { type: "spiral", label: "Spiral", description: "渦巻き線。" },
   { type: "arc", label: "Arc", description: "中心と同心の円弧帯。" },
   { type: "dot", label: "Dot", description: "小さな円。" },
@@ -288,6 +313,15 @@ export function newElement(type: ElementType, partial: Partial<SectorElement> = 
     case "curl":
     case "spiral":
       return { ...base, type, strokeWidth: 1.5, ...partial } as SimpleElement;
+    case "ccurve":
+    case "hook":
+    case "vine":
+    case "doublecurl":
+    case "opposedcurl":
+    case "tendril":
+      return { ...base, type, strokeWidth: 1.8, length: 14, width: 8, ...partial } as SimpleElement;
+    case "paisley":
+      return { ...base, type, length: 14, width: 7, ...partial } as SimpleElement;
     case "dot":
       return { ...base, type, length: 2.5, width: 2.5, ...partial } as SimpleElement;
     case "arc":

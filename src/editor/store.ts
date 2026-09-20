@@ -52,7 +52,8 @@ function validSelection(sel: Selection, project: Project): Selection {
   if (sel.kind === "element") {
     const ring = project.rings.find((r) => r.id === sel.ringId);
     if (!ring) return { kind: "project" };
-    if (!ring.elements.some((e) => e.id === sel.elementId)) return { kind: "ring", ringId: ring.id };
+    const has = (list: readonly Project["rings"][number]["elements"][number][]): boolean => list.some((e) => e.id === sel.elementId || (e.children ? has(e.children) : false));
+    if (!has(ring.elements)) return { kind: "ring", ringId: ring.id };
   }
   return sel;
 }

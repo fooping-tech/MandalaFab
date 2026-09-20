@@ -7,8 +7,8 @@
  * Sector frame: origin at (ring.radius, 0) on the sector axis, +x radially
  * outward, +y tangential (clockwise on screen). The mandala center is at (-R, 0).
  */
-import type { CompoundMotif, Project, Ring, SectorElement } from "../../model/project";
-import { difference, flattenRegions, offset, strokeClosed, strokeOpen } from "../boolean";
+import { BAND_TYPES, type CompoundMotif, type Project, type Ring, type SectorElement } from "../../model/project";
+import { difference, flattenRegions, offset, strokeClosed, strokeOpen, union } from "../boolean";
 import type { Contour, Region, Vec2 } from "../types";
 import { TOLERANCE } from "../types";
 import { area, bounds, centroid, perimeter } from "../vec";
@@ -36,18 +36,23 @@ export interface SectorResult {
   notes: string[];
 }
 
-/** Stroke / inset handling shared by all element types. Returns regions in the element's local frame. */
-export function elementLocalRegions(el: SectorElement, ringRadius: number, minFeatureWidth: number, notes: string[]): Region[] {
+/**
+ * Stroke / inset / nesting handling shared by all element types. Returns regions in
+ * the element's local frame. Nested `children` are built in this frame and combined:
+ * keep children subtract material from the parent cut, cut children add cuts.
+ */
+export function elementLocalRegions(el: SectorElement, ringRadius: number, minFeatureWidth: number, notes: string[], depth = 0): Region[] {
   const params = resolveElementParams(el);
-  const shape = buildElementShape(el, { length: el.length, width: el.width, ringRadius, tolerance: TOLERANCE, params });
-  const regions: Region[] = [];
-  const inset = el.inset > 0 ? el.inset : el.type === "paisley" ? (params.innerGap ?? 0) : 0;
+  const shape = buildElementShape(el, { length: el.length, width: el.width, strokeWidth: el.strokeWidth, ringRadius, tolerance: TOLERANCE, params });
+  let regions: Region[] = [];
+  const inset = el.inset > 0 ? el.inset : el.type === "paisley" ? (params.innerInset ?? 0) : 0;
+  const band = BAND_TYPES.has(el.type) || (el.type === "bezier" && !el.closed && (params.taper ?? 0) > 0);
   const lineWidth = el.strokeWidth > 0 ? el.strokeWidth : Math.max(DEFAULT_LINE_WIDTH, minFeatureWidth);
   let defaulted = false;
   for (const c of shape.closed) {
     if (c.length < 3) continue;
-    if (el.strokeWidth > 0) regions.push(...flattenRegions(strokeClosed(c, el.strokeWidth)));
-    else if (inset > 0) regions.push(...insetRegions(c, inset, el.insetStem));
+    if (el.strokeWidth > 0 && !band) regions.push(...flattenRegions(strokeClosed(c, el.strokeWidth)));
+    else if (inset > 0 && !band) regions.push(...insetRegions(c, inset, el.insetStem));
     else regions.push({ outer: c, holes: [] });
   }
   for (const line of shape.open) {
@@ -56,6 +61,20 @@ export function elementLocalRegions(el: SectorElement, ringRadius: number, minFe
     regions.push(...flattenRegions(strokeOpen(line, lineWidth)));
   }
   if (defaulted && isLineLike(el)) notes.push(`線状要素「${el.name ?? el.type}」の線幅が0なので ${lineWidth} mm を使いました。`);
+  // Inner cuts produced by the builder itself (e.g. the paisley's internal curl).
+  if (shape.inner && shape.inner.length > 0) for (const c of shape.inner) if (c.length >= 3) regions.push({ outer: c, holes: [] });
+  // Nested ornament.
+  if (el.children && el.children.length > 0 && depth < 3) {
+    for (const child of el.children) {
+      if (!child.visible) continue;
+      const childLocal = elementLocalRegions(child, ringRadius, minFeatureWidth, notes, depth + 1);
+      const t = elementTransform(child, Number.POSITIVE_INFINITY);
+      const placed = childLocal.map((r) => transformRegion(r, t));
+      if (placed.length === 0) continue;
+      if (child.mode === "keep") regions = flattenRegions(difference(regions, placed));
+      else regions = flattenRegions(union([...regions, ...placed]));
+    }
+  }
   return regions;
 }
 
@@ -113,7 +132,7 @@ export function invertElementTransform(p: Vec2, t: ElementTransform): Vec2 {
   return { x: x / t.scaleX, y: (y / t.scaleY) * (t.mirror ? -1 : 1) };
 }
 
-function transformRegion(r: Region, t: ElementTransform): Region {
+export function transformRegion(r: Region, t: ElementTransform): Region {
   const flip = t.mirror !== (t.scaleX * t.scaleY < 0);
   const map = (c: Contour): Contour => {
     const out = c.map((p) => applyElementTransform(p, t));
@@ -147,7 +166,7 @@ const signature = (r: Region): string => {
 
 /** Effective transform of an element inside the sector frame (includes radial orientation). */
 export function elementTransform(el: SectorElement, R: number): ElementTransform {
-  const radial = el.orient === "radial" ? Math.atan2(el.y, el.x + R) : 0;
+  const radial = el.orient === "radial" && Number.isFinite(R) ? Math.atan2(el.y, el.x + R) : 0;
   return { x: el.x, y: el.y, rotation: (el.rotation * Math.PI) / 180 + radial, scaleX: el.scaleX, scaleY: el.scaleY, mirror: el.mirror };
 }
 

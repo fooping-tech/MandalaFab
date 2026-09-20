@@ -61,3 +61,29 @@
 ## Material / Cutout
 
 材料 = シート − 最終穴。キャンバスの材料ビューは最終穴を背景色で塗ることで「残る材料が白」になり、抜きビューは最終穴を黒で塗る。どちらも `StencilGeometry.final` を描くので書き出しと一致する。
+
+## v0.3: 装飾曲線・True Paisley・入れ子
+
+- **テーパー帯** `taperedBand(line, widthAt, {bias, roundStart})`: 折れ線の各点で法線方向に幅を取り、根元は丸いキャップ、先端は細く。`bias` で左右非対称。渦で自己交差した帯は `cleanBand()`（Clipper SimplifyPolygon, nonzero）で解消し、囲まれたループは塗りつぶす。
+- **曲線要素**（`BAND_TYPES`）: `ccurve` `hook` `vine` `doublecurl` `opposedcurl` `tendril` は閉じたテーパー帯を返す。`strokeWidth` は根元の幅、`tip` は先端の太さ比。`bezier`（開いたパス）も `params.taper > 0` でテーパー帯になる。
+- **True Paisley** `buildTruePaisley({ length, width, belly, curlRadius, curlAmount, tipSharpness, innerInset, innerCurl, direction })`: 背骨 = 曲がる 3 次曲線 + 半径が縮む渦。直線の雫（`buildTeardrop`）を `sweepAlongSpine` で背骨に沿わせ、巻きの外側を `belly` で太らせる。`innerInset` は既存の縁取り（茎付き）、`innerCurl` は内側の材料に鉤（`buildHook`）を cut する。
+- **入れ子** `SectorElement.children`: 親のローカル座標で組み立て（`elementLocalRegions` を再帰）、`keep` は親の穴から差し引き、`cut` は union で追加。深さ 3 まで。
+- **役割** `SectorElement.role`（primary / secondary / flow / filler / boundary）は情報用で、ツリーのバッジと `compositionStats()` に使う。
+
+## Ornamental Composition Engine（`src/generate/compose.ts`）
+
+```
+composeMandala({ symmetry, density, seed, templates? })
+  layoutBands()            帯の半径範囲（interlock で重ねる）、位相は交互に半セクタ、狭い最内帯は repeat を半分に
+  for each band:
+    obstaclesFor(prev)     前の帯（または中心）の実形状をこのセクタ座標へ変換して障害物に
+    composeSector(template)
+      SectorContext        axis / polar / boundary / boundaryNormal / rho(u) / halfWidth
+      primary              placePrimary: 障害物・自分のミラーを避けてずらし／縮小
+      flows                shoulderVine（境界接続、attach）、baseScroll、tipCurl、ensureFlows、tip vine
+      secondaries          placeOnSpine（spine の接線・法線に沿う）、tipLeaf、ensureSecondaries
+      fillers              wedgeFillers、outlineDots、fillFreeSpace（格子走査、衝突なしの場所だけ）
+      add() → fits()       gap 付き offset と placed（ミラー含む）の交差、両境界、予約ゾーン、自分のミラー
+```
+
+境界接続の条件: 端点 `E = B(ρ) + n·gap/2`（n = 境界の内向き法線）、`E` での接線 = `-n`。`mirrorLocal` + 回転 = 境界での反射なので、隣 sector の曲線は `E` の鏡像から同じ接線で続く（C1）。

@@ -55,6 +55,8 @@ function params(v: unknown): Record<string, number> {
 
 const TYPES = new Set<string>(ELEMENT_TYPES.map((t) => t.type));
 
+const ROLES = new Set(["primary", "secondary", "flow", "filler", "boundary"]);
+
 export function normalizeElement(raw: unknown, depth = 0): SectorElement | null {
   if (!isRecord(raw)) return null;
   const type = (typeof raw.type === "string" && TYPES.has(raw.type) ? raw.type : "teardrop") as ElementType;
@@ -81,6 +83,14 @@ export function normalizeElement(raw: unknown, depth = 0): SectorElement | null 
     params: params(raw.params),
   };
   if (typeof raw.name === "string") (base as { name?: string }).name = raw.name.slice(0, 60);
+  if (typeof raw.role === "string" && ROLES.has(raw.role)) (base as { role?: string }).role = raw.role;
+  if (Array.isArray(raw.children) && raw.children.length > 0 && depth < 3) {
+    const children = raw.children
+      .slice(0, 32)
+      .map((c) => normalizeElement(c, depth + 1))
+      .filter((c): c is SectorElement => c !== null);
+    if (children.length > 0) (base as { children?: SectorElement[] }).children = children;
+  }
   switch (type) {
     case "bezier": {
       const pts = Array.isArray(raw.points) ? raw.points.map((p) => vec(p, { x: 0, y: 0 })) : [];

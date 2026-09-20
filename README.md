@@ -29,6 +29,21 @@ MandalaProject
 - **縁取り（inset / innerGap）**: 形の内側に同形の材料を残し、茎（insetStem）または自動ブリッジで接続します。
 - **Material View / Cutout View**: 残る材料を白で見るビューと、抜ける領域を黒で見るビュー。どちらも書き出される SVG と同じ形状です。
 
+## v0.3: Ornamental Composition Engine
+
+v0.2 の生成器は「帯ごとに単純なテンプレートを乱択して独立に要素を置く」ものでした（[docs/design-gap.md](docs/design-gap.md) に分析）。v0.3 では 1 セクタを **装飾文法** で組み立てます。
+
+- **Primary / Secondary / Flow / Filler / Boundary** の役割を持つ要素をこの順に配置。すべての配置は衝突判定（gap・両境界・予約ゾーン・自分のミラー像・前の帯の実形状）を通り、ずらし／縮小／破棄されます。
+- **Flow Field**: primary の肩から出る Bezier spine に沿って葉・雫・鉤・ドットを接線方向に配置（蔓・アラベスク構造）。
+- **境界接続**: 曲線の端点をセクタ境界の材料ギャップ上に置き、接線を境界法線に揃えるので、ミラー／回転コピーした隣セクタと C1 連続になります。
+- **Interlock**: 帯の半径範囲を重ね、位相を半セクタずらし、前の帯の先端が次の帯の主モチーフの間に食い込みます。
+- **新しい曲線語彙**（テーパー帯）: C-Curve / Hook / Vine / Double Curl / Opposed Curl / Tendril。`Bezier Path` も `taper` で先細りの帯になります。
+- **True Paisley**: 曲がって巻き込む背骨に雫をスイープした本物のペイズリー（belly / curlRadius / curlAmount / tipSharpness / innerInset / innerCurl）。
+- **Nested Ornament**: 要素の `children` で、大きな雫の中に小さな雫、蓮弁の中に花弁、ペイズリーの中に渦、といった異なる内部モチーフを入れられます（インスペクタの「内部モチーフ」）。
+- **Composition Template 6 種**: floralArabesque / paisleyVine / lotusScroll / gothicFloral / laceFlower / ornamentalVine。プリセット 5 種はこのエンジンから生成（`GALLERY=1 npx vitest run scripts/make-presets.test.ts`）。
+
+受け入れ基準（`tests/compose.test.ts`）: Dense Floral Stencil の各帯で意味のある primitive 10 以上・flow 3 本以上・境界接続 1 以上、プロジェクト全体で nested motif 2 種以上・帯間 interlock 2 以上、島 0・検証エラー 0。
+
 ## できること
 
 - 中心モチーフ + リング（セクタ）+ 要素の階層編集（左ツリー / 右インスペクタ / 中央 CAD 風キャンバス）

@@ -41,3 +41,5 @@ npm run preview
 - 形状処理を変えたらテストを追加し、5 プリセットすべてで島 0・エラー 0、Dense Floral Stencil で 100 パス以上を維持する。
 - Clipper へ領域を渡すときは `RegionNode.children`（穴の中の領域）まで再帰的に投入する（`addRegions`）。省くと中心部が消える。
 - 有機モチーフは Bézier（`geometry/bezier.ts`）で作る。単純な circle/petal の repeat だけのプリセットは作らない。
+- プリセットは手で書かず `GALLERY=1 npx vitest run scripts/make-presets.test.ts` で Composition Engine（`src/generate/compose.ts`）から再生成する。受け入れ基準は `tests/compose.test.ts`。
+- 生成器のテンプレートを変えたら `GALLERY=1 npx vitest run scripts/sector-view.test.ts`（1 セクタ拡大）と `scripts/gallery.test.ts` で目視確認する。島（islandsBefore）が増えたら配置の衝突が原因なので `fits()` の条件を疑う。

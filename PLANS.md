@@ -60,3 +60,31 @@
 - ブラウザ確認（Playwright, headless Chromium）: Dense Floral Stencil の材料ビュー／抜きビュー、リング選択時のセクタガイド、Bezier 要素の追加とハンドル表示・ドラッグ、コンソールエラーなし。フッター表示: パス 565、ブリッジ 0、警告 1（細い材料のくびれ）、ジオメトリ 54 ms + 検証 634 ms。
 - ギャラリー（`GALLERY=1 npx vitest run scripts`）で 5 プリセットと density 0.4 / 0.9 の生成結果を目視確認。
 - 未検証: 実機加工。手動ブリッジ UI、要素の回転・スケールのハンドル操作は未実装。警告「細い材料のくびれ」は角の先端を含む場合がある（判定は面積・長さの閾値による）。
+
+## Ornamental Composition Engine（2026-09-20）
+
+### 要求
+
+- 機能追加ではなく「市販の高密度な曼荼羅ステンシルのような意匠品質」の実現。まず `docs/design-gap.md` に現状分析を書く。
+- Ornament Grammar（Primary 1 / Secondary 2〜5 / Flow 2〜6 / Filler 複数 / Boundary connection）で sector を生成。Flow Field（primary から伸びる Bezier spine に沿って leaf / curl / teardrop / dot を配置）。
+- 新曲線: C-Curve / Hook / Vine / Double Curl / Opposed Curl / Tendril（線幅を持つ ornamental band）。True Paisley（outer contour, inward curling tip, asymmetric belly, inner contour, inner teardrop, internal curl; length / width / belly / curlRadius / curlAmount / tipSharpness / innerInset / innerCurl）。
+- Nested Ornament（inset の同形コピーではなく異なる内部モチーフ）。Boundary-aware（境界端点・接線連続・ミラー連続）。Interlocking Rings。Sector Composition Template 6 種（10〜25 primitive）。Dense Floral Stencil を全面的に作り直す。
+- 新しい受け入れ基準: 1 sector に意味のある ornamental primitive 10 以上、nested motif 2 種以上、flow curve 3 本以上、sector boundary connection 1 以上、ring-to-ring interlock 2 箇所以上。既存の Sector geometry / Bezier / Clipper / Validation / SVG export は活用し、全面書き換えはしない。
+
+### 実装
+
+- `docs/design-gap.md`: v0.2 生成器（Band Template の乱択・独立配置・帯間関係なし・境界無視・一様幅の線・剪断だけの paisley・同形 inset のみ・小要素の増加による密度）が届かない理由と対策表、実装結果表。
+- `src/geometry/elements/builders.ts`: `taperedBand`（可変幅・非対称・丸キャップ）、`cleanBand`（自己交差の解消）、`buildCCurve` / `buildHook` / `buildVine` / `buildDoubleCurl` / `buildOpposedCurl`（共有の茎）/ `buildTendril`、`spineFrames` / `sweepAlongSpine`、`buildTruePaisley`（直線の雫を巻き込む背骨にスイープ、belly、innerInset、innerCurl）、`bezier` の `taper`。
+- `src/model/project.ts` / `validate.ts`: 要素型 6 種追加、`role`、`children`（再帰的に検証、深さ 3）。`src/geometry/elements/sector.ts`: 帯型の扱い、builder の inner cuts、`children` の cut / keep 合成。
+- `src/generate/compose.ts`（新規）: `SectorContext`（座標ヘルパー、`fits()` による衝突回避 = gap 付き offset の交差・両境界・予約ゾーン・自分のミラー像・前の帯の障害物、ずらし／縮小／破棄）、`spine` / `boundarySpine` / `placeOnSpine`、primary（縁取り雫 + 内側モチーフ、paisley の向かい合うペア）、`shoulderVine`（境界接続）、`baseScroll` / `tipCurl` / `tipLeaf` / `ensureFlows` / `ensureSecondaries` / `wedgeFillers` / `outlineDots` / `fillFreeSpace`、6 テンプレート、`layoutBands`（interlock、交互位相、狭い最内帯は repeat 半減）、`obstaclesFor`、`composeMandala`、`compositionStats` / `bandInterlocks`。`generator.ts` はこれに委譲。
+- `src/geometry/stencil/bridges.ts`: 周辺の島は 16 方向のうち最短スパン（+90° 以上離れた 2 本目）を選ぶ（細い帯を渡る短い橋になる）。
+- `scripts/`: `sector-view.test.ts`（1 セクタ拡大・役割別色分け・島の赤表示）、`paisley-view.test.ts`、`debug-islands.test.ts`、`make-presets.test.ts`（プリセット再生成）。プリセット 5 種を全面再生成。
+- UI: ツリーに役割バッジと入れ子の子要素行、インスペクタに「内部モチーフ」（子の追加・削除・選択）、新要素型のアイコン。`commands.ts` は入れ子を再帰的に更新。
+- テスト `tests/compose.test.ts`: Dense Floral の受け入れ基準（各帯 primitive ≥ 10・primary 1・secondary ≥ 1・flow ≥ 3・boundary ≥ 1、nested 2 種以上、interlock ≥ 2、島 0、エラー 0、はみ出しなし）、全テンプレートの文法、パッキングの非融合、境界接続（端点距離 = gap/2、接線 = 境界法線、反射で C1 連続）、決定性と density、True Paisley（丸い根元・非対称・巻き込み）、inset + 内部渦の茎接続、テーパー帯の幅、hook の自己交差除去、children の cut / keep。
+
+### 結果
+
+- テスト: `npm test` 9 ファイル 73 件成功（vitest の testTimeout を 120 s に）。Dense Floral Stencil: 4 帯（最内帯は 6 分割、他は 12 分割）、帯ごとの primitive 11〜13、flow 3〜4、boundary 2、nested 1 種（帯ごと、プロジェクト全体で 2 種以上）、interlock 3、島 0、検証エラー 0。
+- ギャラリー（`GALLERY=presets npx vitest run scripts/gallery.test.ts`）: 5 プリセットとも islandsBefore ≤ 24、島 0、ブリッジは蔓を渡る短いものだけ。目視でレース／フィリグリー／アラベスクの印象を確認（帯をまたぐ蔓、縁取り雫の中の雫、向かい合うペイズリー）。
+- ビルド成功。ブラウザ確認（Playwright）: 初期表示が新しい Dense Floral Stencil、ツリーに役割バッジと子要素、要素選択でインスペクタの「内部モチーフ」表示、コンソールエラーなし。
+- 未検証・限界: 実機加工は未検証。`fillFreeSpace` は格子候補からの充填で、密度を上げるとドットが目立つ。曲線の「接線接触」は材料ギャップ（boundaryGap）を挟む表現。12 分割の最内帯は幅不足のため分割数を半分にしている。

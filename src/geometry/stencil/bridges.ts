@@ -163,28 +163,35 @@ function centralBridges(island: Island, o: BridgeOptions, idBase: string): Bridg
   return best.spans.map((span, j) => makeBridge(origin, dirOf(best.phase + step * j), span, o, `${idBase}-${j}`));
 }
 
-/** Radial (inward/outward) bridges for an off-center island, with angular fallbacks. */
+/**
+ * Bridges for an off-center island: sample 16 directions (relative to the radial
+ * direction so symmetric islands make the same choice) and take the shortest span;
+ * with `perIsland = 2` add the shortest span that points at least 90° away from it.
+ * Short spans cross thin bands, which is where a real stencil would put its bridges.
+ */
 function radialBridges(island: Island, o: BridgeOptions, idBase: string): Bridge[] {
   const c = island.centroid;
   const origin = containsPoint(island.contour, c) ? c : nearestInteriorPoint(island);
   const outward = Math.atan2(c.y, c.x);
   const maxSpan = o.maxSpan ?? Infinity;
   const candidates: { angle: number; span: { t0: number; t1: number } }[] = [];
-  const tryAngle = (angle: number): void => {
+  const N = 16;
+  for (let k = 0; k < N; k++) {
+    const angle = outward + (Math.PI * 2 * k) / N;
     const span = raySpan(island, origin, dirOf(angle));
     if (span && span.t1 - span.t0 <= maxSpan) candidates.push({ angle, span });
-  };
-  tryAngle(outward + Math.PI); // inward first
-  tryAngle(outward);
-  if (candidates.length === 0) {
-    for (let k = 1; k < 16; k++) tryAngle(outward + (Math.PI * 2 * k) / 16);
-    candidates.sort((a, b) => a.span.t1 - a.span.t0 - (b.span.t1 - b.span.t0));
-    candidates.splice(1);
-  } else if (o.perIsland === 1 && candidates.length > 1) {
-    candidates.sort((a, b) => a.span.t1 - a.span.t0 - (b.span.t1 - b.span.t0));
-    candidates.splice(1);
   }
-  return candidates.map((cand, j) => makeBridge(origin, dirOf(cand.angle), cand.span, o, `${idBase}-${j}`));
+  if (candidates.length === 0) return [];
+  // Deterministic tie-break: shorter span first, then closer to the inward radial direction.
+  const inward = outward + Math.PI;
+  const angDiff = (a: number, b: number): number => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
+  candidates.sort((a, b) => a.span.t1 - a.span.t0 - (b.span.t1 - b.span.t0) || angDiff(a.angle, inward) - angDiff(b.angle, inward));
+  const chosen = [candidates[0]!];
+  if (o.perIsland === 2) {
+    const second = candidates.find((cand) => angDiff(cand.angle, chosen[0]!.angle) >= Math.PI / 2);
+    if (second) chosen.push(second);
+  }
+  return chosen.map((cand, j) => makeBridge(origin, dirOf(cand.angle), cand.span, o, `${idBase}-${j}`));
 }
 
 /** A point inside a (possibly concave) contour: midpoint of the widest horizontal span through the bbox center row. */

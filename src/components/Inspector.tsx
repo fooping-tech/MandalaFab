@@ -1,7 +1,9 @@
 import { useMemo } from "react";
 import { actionAddElement } from "../editor/actions";
 import {
+  addChild,
   addBezierSegment,
+  findElementDeep,
   duplicateElement,
   duplicateRing,
   makeCompound,
@@ -24,7 +26,7 @@ import { useRenderState } from "../editor/render-context";
 import { useEditor, type EditorStore } from "../editor/store";
 import { elementParamSpecs } from "../geometry/elements/builders";
 import { listMotifs } from "../geometry/motifs";
-import { ELEMENT_TYPES, LIMITS, MATERIAL_PRESETS, SHEET_PRESETS, SYMMETRY_PRESETS, type CenterMotif, type ElementType, type Ring, type SectorElement } from "../model/project";
+import { ELEMENT_TYPES, LIMITS, MATERIAL_PRESETS, SHEET_PRESETS, SYMMETRY_PRESETS, newElement, type CenterMotif, type ElementType, type Ring, type SectorElement } from "../model/project";
 import { NumberField, Section, SelectField, SmallButton, TextField, Toggle } from "./fields";
 import { AddElementMenu } from "./RingTree";
 
@@ -32,7 +34,7 @@ export function Inspector({ store }: { store: EditorStore }) {
   const selection = useEditor((s) => s.selection);
   const project = useEditor((s) => s.project);
   const ring = selection.kind === "ring" || selection.kind === "element" ? project.rings.find((r) => r.id === selection.ringId) : undefined;
-  const element = selection.kind === "element" && ring ? ring.elements.find((e) => e.id === selection.elementId) : undefined;
+  const element = selection.kind === "element" && ring ? findElementDeep(ring.elements, selection.elementId) : undefined;
   const title = element ? "Element Inspector" : ring ? "Ring Inspector" : selection.kind === "center" ? "Center Inspector" : "Mandala Inspector";
   return (
     <aside className="flex min-h-0 flex-col border-l border-line bg-panel">
@@ -171,6 +173,30 @@ function ElementPanel({ store, ring, element: el }: { store: EditorStore; ring: 
         )}
       </Section>
       {el.type === "bezier" && <BezierPanel store={store} ring={ring} element={el} />}
+      <Section title="内部モチーフ（入れ子）">
+        <p className="text-[10px] text-ink-3">この要素のローカル座標に置く子要素。cut は内側の材料を切り抜き、keep は材料を残します。</p>
+        {el.children && el.children.length > 0 && (
+          <ul className="grid gap-1 text-[11px]">
+            {el.children.map((c) => (
+              <li key={c.id} className="flex items-center gap-2">
+                <button type="button" className="flex-1 rounded border border-line-2 bg-paper px-2 py-0.5 text-left hover:border-select" onClick={() => store.select({ kind: "element", ringId: ring.id, elementId: c.id })}>
+                  {c.name ?? c.type} · {c.mode}
+                </button>
+                <SmallButton danger onClick={() => store.execute(removeElement(ring.id, c.id))}>
+                  ✕
+                </SmallButton>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="flex flex-wrap gap-1">
+          {(["teardrop", "leaf", "petal", "curl", "hook", "dot"] as ElementType[]).map((t) => (
+            <SmallButton key={t} onClick={() => store.execute(addChild(ring.id, el.id, newElement(t, { name: `inner ${t}`, length: Math.max(2, el.length * 0.5), width: Math.max(1.5, el.width * 0.45), mode: "cut", strokeWidth: t === "curl" || t === "hook" ? Math.max(0.8, el.width * 0.12) : 0 })))}>
+              ＋ {t}
+            </SmallButton>
+          ))}
+        </div>
+      </Section>
       {el.type === "connector" && (
         <Section title="コネクタ">
           <div className="grid grid-cols-2 gap-2">

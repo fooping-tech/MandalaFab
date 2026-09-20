@@ -42,7 +42,7 @@
 
 | フィールド | 意味 |
 | --- | --- |
-| `type` | `teardrop` `leaf` `petal` `paisley` `scurve` `curl` `spiral` `arc` `dot` `circle` `bezier` `connector` `shape` `compound` |
+| `type` | `teardrop` `leaf` `petal` `paisley` `scurve` `curl` `spiral` `arc` `dot` `circle` `bezier` `connector` `shape` `compound` + v0.3: `ccurve` `hook` `vine` `doublecurl` `opposedcurl` `tendril` |
 | `x`, `y`, `rotation`, `scaleX`, `scaleY`, `mirror` | local position / rotation / scale / mirror |
 | `length`, `width` | 軸方向・横方向の寸法（mm） |
 | `strokeWidth` | 0 = 塗り、>0 = 輪郭帯。線状要素（S-Curve, Curl, Spiral, Connector, 開いた Bezier）では帯の幅 |
@@ -51,6 +51,8 @@
 | `repeat`, `repeatSpread` | 局所リピート: 中心のまわりに `repeatSpread`°（0 = セクタ角）の範囲で均等配置 |
 | `inset`, `insetStem` | 縁取り: 内側に同形の材料を残す幅と、根元でつなぐ茎の幅（0 = 自動ブリッジ） |
 | `params` | 種類別パラメータ（下表） |
+| `role` | 任意。`primary` / `secondary` / `flow` / `filler` / `boundary`（装飾文法上の役割） |
+| `children` | 任意。入れ子の子要素（親ローカル座標、`mode` で cut / keep、深さ 3 まで） |
 
 種類別:
 
@@ -59,11 +61,15 @@
 | teardrop | `curvature` (-1..1), `tipSharpness` (0..1) |
 | leaf | `bend` (-1..1), `tipSharpness` (0..1) |
 | petal | `bulge`, `shoulder` |
-| paisley | `curl` (0..1.5), `tip` (0..1), `innerGap` (mm) |
+| paisley | `belly` (0..1), `curlRadius` (mm, 0 = 自動), `curlAmount` (0..1.5 turns), `tipSharpness`, `innerInset` (mm), `innerCurl` (0..1), `direction` (±1) |
+| ccurve / doublecurl | `tip`（端の太さ比）, doublecurl は `turns` |
+| hook / tendril | `tip`, `turns`, `direction` |
+| vine | `tip`, `waves` |
+| opposedcurl | `tip`, `turns` |
 | scurve | `curvature` (0.1..1.2) |
 | curl | `radius` (mm, 0 = 自動), `turns`, `taper`, `direction` (±1) |
 | spiral | `turns` |
-| bezier | `points: Vec2[]`（start, cp1, cp2, end, …）, `closed` |
+| bezier | `points: Vec2[]`（start, cp1, cp2, end, …）, `closed`, `taper`（開いたパスをテーパー帯にする） |
 | connector | `from`, `to`, `bulge` |
 | shape | `motif`（heart, star, polygon, crescent, tulip, lotus, scallop, diamond, triangle, line, wave …） |
 | compound | `ref`（`project.compounds[].id`） |

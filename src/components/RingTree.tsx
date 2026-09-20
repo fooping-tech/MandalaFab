@@ -1,7 +1,9 @@
 import { actionAddElement, actionAddRing } from "../editor/actions";
 import { duplicateElement, duplicateRing, moveElement, moveRing, removeElement, removeRing, updateElement, updateRing } from "../editor/commands";
 import { useEditor, type EditorStore } from "../editor/store";
-import { ELEMENT_TYPES, type ElementType, type SectorElement } from "../model/project";
+import { ELEMENT_TYPES, type ElementType, type OrnamentRole, type SectorElement } from "../model/project";
+
+const ROLE_BADGE: Record<OrnamentRole, string> = { primary: "P", secondary: "S", flow: "F", filler: "·", boundary: "B" };
 
 export const ELEMENT_ICON: Record<ElementType, string> = {
   teardrop: "💧",
@@ -18,6 +20,12 @@ export const ELEMENT_ICON: Record<ElementType, string> = {
   connector: "⊢",
   shape: "◇",
   compound: "⧉",
+  ccurve: "⌒",
+  hook: "↺",
+  vine: "〰",
+  doublecurl: "∾",
+  opposedcurl: "ᔕ",
+  tendril: "࿄",
 };
 
 function elementLabel(e: SectorElement): string {
@@ -109,8 +117,10 @@ export function RingTree({ store }: { store: EditorStore }) {
                             <span className="w-4 text-center">{ELEMENT_ICON[e.type]}</span>
                             <span className="truncate">{elementLabel(e)}</span>
                             <span className="ml-auto shrink-0 text-[9px] text-ink-3">
+                              {e.role ? `${ROLE_BADGE[e.role]} ` : ""}
                               {e.mode === "keep" ? "keep" : ""}
                               {e.repeat > 1 ? ` ×${e.repeat}` : ""}
+                              {e.children && e.children.length > 0 ? ` ⊂${e.children.length}` : ""}
                             </span>
                           </button>
                           <span className="hidden items-center gap-0.5 group-hover:flex">
@@ -131,6 +141,24 @@ export function RingTree({ store }: { store: EditorStore }) {
                             {e.visible ? "◉" : "○"}
                           </button>
                         </div>
+                        {e.children && e.children.length > 0 && (
+                          <ul>
+                            {e.children.map((c) => (
+                              <li key={c.id}>
+                                <button
+                                  type="button"
+                                  className={`flex w-full items-center gap-1.5 py-0.5 pl-16 pr-2 text-left text-[10px] ${c.id === selEl ? "bg-select-bg text-select" : "hover:bg-panel-2"}`}
+                                  onClick={() => store.select({ kind: "element", ringId: r.id, elementId: c.id })}
+                                >
+                                  <span className="text-ink-3">↳</span>
+                                  <span className="w-4 text-center">{ELEMENT_ICON[c.type]}</span>
+                                  <span className="truncate">{elementLabel(c)}</span>
+                                  <span className="ml-auto text-[9px] text-ink-3">{c.mode}</span>
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
                       </li>
                     );
                   })}

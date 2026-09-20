@@ -33,15 +33,60 @@ function mapRing(p: Project, id: string, fn: (r: Ring) => Ring): Project {
   return { ...p, rings };
 }
 
+/** Map over an element list recursively (nested children included). */
+function mapDeep(list: SectorElement[], elementId: string, fn: (e: SectorElement) => SectorElement): SectorElement[] {
+  let changed = false;
+  const out = list.map((e) => {
+    if (e.id === elementId) {
+      changed = true;
+      return fn(e);
+    }
+    if (e.children && e.children.length > 0) {
+      const children = mapDeep(e.children, elementId, fn);
+      if (children !== e.children) {
+        changed = true;
+        return { ...e, children } as SectorElement;
+      }
+    }
+    return e;
+  });
+  return changed ? out : list;
+}
+
 function mapElement(p: Project, ringId: string, elementId: string, fn: (e: SectorElement) => SectorElement): Project {
   return mapRing(p, ringId, (r) => {
-    const i = r.elements.findIndex((e) => e.id === elementId);
-    if (i < 0) return r;
-    const elements = r.elements.slice();
-    elements[i] = fn(elements[i]!);
-    return { ...r, elements };
+    const elements = mapDeep(r.elements, elementId, fn);
+    return elements === r.elements ? r : { ...r, elements };
   });
 }
+
+/** Find an element (top-level or nested) in a ring. */
+export function findElementDeep(list: readonly SectorElement[], elementId: string): SectorElement | undefined {
+  for (const e of list) {
+    if (e.id === elementId) return e;
+    if (e.children) {
+      const f = findElementDeep(e.children, elementId);
+      if (f) return f;
+    }
+  }
+  return undefined;
+}
+
+/** Add a nested child to an element. */
+export const addChild = (ringId: string, parentId: string, child: SectorElement): Command => ({
+  label: "内部モチーフを追加",
+  apply: (p) => mapElement(p, ringId, parentId, (e) => ({ ...e, children: [...(e.children ?? []), child] }) as SectorElement),
+});
+
+/** Remove a nested child by id. */
+export const removeChild = (ringId: string, childId: string): Command => ({
+  label: "内部モチーフを削除",
+  apply: (p) =>
+    mapRing(p, ringId, (r) => {
+      const strip = (list: SectorElement[]): SectorElement[] => list.map((e) => (e.children ? ({ ...e, children: strip(e.children.filter((c) => c.id !== childId)) } as SectorElement) : e));
+      return { ...r, elements: strip(r.elements) };
+    }),
+});
 
 // ---- rings -----------------------------------------------------------------
 
@@ -153,7 +198,11 @@ export const addElement = (ringId: string, element: SectorElement, index?: numbe
 
 export const removeElement = (ringId: string, elementId: string): Command => ({
   label: "要素を削除",
-  apply: (p) => mapRing(p, ringId, (r) => ({ ...r, elements: r.elements.filter((e) => e.id !== elementId) })),
+  apply: (p) =>
+    mapRing(p, ringId, (r) => {
+      if (r.elements.some((e) => e.id === elementId)) return { ...r, elements: r.elements.filter((e) => e.id !== elementId) };
+      return removeChild(ringId, elementId).apply(p).rings.find((x) => x.id === r.id) ?? r;
+    }),
 });
 
 export const duplicateElement = (ringId: string, elementId: string): Command => ({
