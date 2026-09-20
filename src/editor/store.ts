@@ -3,6 +3,24 @@ import type { Project } from "../model/project";
 import type { Command } from "./commands";
 
 export type ViewMode = "design" | "material" | "cutout";
+export type DiffMode = "off" | "reference" | "generated" | "overlap";
+
+/** Reference image overlay (session state, not part of the project JSON). */
+export interface ReferenceLayer {
+  /** Object URL or data URL of the (cropped) image. */
+  url: string;
+  /** Image pixel size. */
+  pxWidth: number;
+  pxHeight: number;
+  /** Displayed width in mm (height follows the aspect ratio). */
+  widthMm: number;
+  /** Position of the image center in design coordinates (mm). */
+  x: number;
+  y: number;
+  rotation: number;
+  opacity: number;
+  visible: boolean;
+}
 
 export interface ViewState {
   mode: ViewMode;
@@ -13,6 +31,8 @@ export interface ViewState {
   showBridges: boolean;
   /** Show the sector wedge and mirror axis of the selected ring. */
   sectorGuide: boolean;
+  /** Difference view between the reference image and the generated geometry. */
+  diff: DiffMode;
 }
 
 export type Selection = { kind: "project" } | { kind: "center" } | { kind: "ring"; ringId: string } | { kind: "element"; ringId: string; elementId: string };
@@ -30,6 +50,7 @@ export interface EditorState {
   hoverRingId: string | null;
   focusedIssueId: string | null;
   view: ViewState;
+  reference: ReferenceLayer | null;
   message: Message | null;
   revision: number;
   canUndo: boolean;
@@ -71,7 +92,8 @@ export class EditorStore {
       hoverElementId: null,
       hoverRingId: null,
       focusedIssueId: null,
-      view: { mode: "material", grid: true, guides: true, rulers: true, showIssues: true, showBridges: true, sectorGuide: true },
+      view: { mode: "material", grid: true, guides: true, rulers: true, showIssues: true, showBridges: true, sectorGuide: true, diff: "off" },
+      reference: null,
       message: null,
       revision: 0,
       canUndo: false,
@@ -145,6 +167,16 @@ export class EditorStore {
 
   setView(patch: Partial<ViewState>): void {
     this.set({ view: { ...this.state.view, ...patch } });
+  }
+
+  setReference(ref: ReferenceLayer | null): void {
+    if (this.state.reference && (!ref || ref.url !== this.state.reference.url) && this.state.reference.url.startsWith("blob:")) URL.revokeObjectURL(this.state.reference.url);
+    this.set({ reference: ref, view: ref ? this.state.view : { ...this.state.view, diff: "off" } });
+  }
+
+  updateReference(patch: Partial<ReferenceLayer>): void {
+    if (!this.state.reference) return;
+    this.set({ reference: { ...this.state.reference, ...patch } });
   }
 
   notify(text: string, kind: Message["kind"] = "info"): void {

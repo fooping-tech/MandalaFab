@@ -8,13 +8,14 @@ import { GenerateDialog } from "../components/dialogs/GenerateDialog";
 import { PresetDialog } from "../components/dialogs/PresetDialog";
 import { HelpDialog } from "../components/dialogs/HelpDialog";
 import { ShareDialog } from "../components/dialogs/ShareDialog";
+import { ImportReferenceDialog } from "../components/dialogs/ImportReferenceDialog";
 import { actionAddRing, actionDeleteSelected, actionExportSVG, actionOpen, actionSaveJSON } from "../editor/actions";
 import { saveLocal } from "../editor/persist";
 import { RenderContext } from "../editor/render-context";
 import { useRender } from "../editor/use-render";
 import { useEditor, type EditorStore, type ViewMode } from "../editor/store";
 
-export type DialogName = "generate" | "presets" | "help" | "share" | null;
+export type DialogName = "generate" | "presets" | "help" | "share" | "import" | null;
 
 export interface CanvasApi {
   fit(): void;
@@ -92,6 +93,7 @@ export function App({ store }: { store: EditorStore }) {
       <PresetDialog store={store} open={dialog === "presets"} onClose={() => setDialog(null)} />
       <HelpDialog open={dialog === "help"} onClose={() => setDialog(null)} />
       <ShareDialog store={store} open={dialog === "share"} onClose={() => setDialog(null)} />
+      {dialog === "import" && <ImportReferenceDialog store={store} onClose={() => setDialog(null)} />}
     </RenderContext.Provider>
   );
 }

@@ -118,6 +118,11 @@ function ElementPanel({ store, ring, element: el }: { store: EditorStore; ring: 
         <TextField label="名前" value={el.name ?? ""} onChange={(name) => set({ name })} />
         <SelectField label="種類" value={el.type} onChange={(t) => store.execute(setElementType(ring.id, el.id, t as ElementType))} options={ELEMENT_TYPES.map((t) => ({ value: t.type, label: t.label }))} />
         {typeInfo && <p className="-mt-1 text-[10px] text-ink-3">{typeInfo.description}</p>}
+        {el.imported && (
+          <p className={`rounded border px-2 py-1 text-[10px] ${el.imported.confidence < 0.7 ? "border-warn bg-[#fdf3e0] text-warn" : "border-line-2 text-ink-3"}`}>
+            画像から認識: {el.imported.detectedType} · confidence {Math.round(el.imported.confidence * 100)}%{el.imported.confidence < 0.7 ? " — 自信が低いので形を確認してください" : ""}
+          </p>
+        )}
         {el.type === "shape" && <SelectField label="形" value={el.motif} onChange={(motif) => set({ motif } as Partial<SectorElement>)} options={listMotifs().map((m) => ({ value: m.id, label: m.label }))} />}
         {el.type === "compound" && (
           <SelectField label="複合モチーフ" value={el.ref} onChange={(ref) => set({ ref } as Partial<SectorElement>)} options={[{ value: "", label: "（未選択）" }, ...compounds.map((c) => ({ value: c.id, label: c.name }))]} />
@@ -286,6 +291,35 @@ function CenterPanel({ store, center }: { store: EditorStore; center: CenterMoti
   );
 }
 
+function ReferencePanel({ store }: { store: EditorStore }) {
+  const ref = useEditor((s) => s.reference);
+  const diff = useEditor((s) => s.view.diff);
+  if (!ref) return null;
+  return (
+    <Section title="参照画像（Reference Layer）" right={<SmallButton danger onClick={() => store.setReference(null)}>削除</SmallButton>}>
+      <Toggle label="表示" checked={ref.visible} onChange={(visible) => store.updateReference({ visible })} />
+      <NumberField label="不透明度" value={ref.opacity} onChange={(opacity) => store.updateReference({ opacity })} min={0} max={1} step={0.05} />
+      <NumberField label="表示幅（スケール）" value={ref.widthMm} onChange={(widthMm) => store.updateReference({ widthMm })} min={10} max={600} step={0.5} unit="mm" />
+      <NumberField label="回転" value={ref.rotation} onChange={(rotation) => store.updateReference({ rotation })} min={-180} max={180} step={0.5} unit="°" />
+      <div className="grid grid-cols-2 gap-2">
+        <NumberField label="X オフセット" value={ref.x} onChange={(x) => store.updateReference({ x })} min={-200} max={200} step={0.5} unit="mm" slider={false} />
+        <NumberField label="Y オフセット" value={ref.y} onChange={(y) => store.updateReference({ y })} min={-200} max={200} step={0.5} unit="mm" slider={false} />
+      </div>
+      <SelectField
+        label="Difference View"
+        value={diff}
+        onChange={(v) => store.setView({ diff: v })}
+        options={[
+          { value: "off", label: "通常表示" },
+          { value: "reference", label: "reference only（参照画像のみ）" },
+          { value: "generated", label: "generated only（生成形状のみ）" },
+          { value: "overlap", label: "overlap（重ね合わせ）" },
+        ]}
+      />
+    </Section>
+  );
+}
+
 function ProjectPanel({ store }: { store: EditorStore }) {
   const project = useEditor((s) => s.project);
   const { sheet, constraints, bridges } = project;
@@ -293,6 +327,7 @@ function ProjectPanel({ store }: { store: EditorStore }) {
   const materialMatch = useMemo(() => MATERIAL_PRESETS.find((m) => JSON.stringify(m.constraints) === JSON.stringify(constraints)), [constraints]);
   return (
     <>
+      <ReferencePanel store={store} />
       <Section title="プロジェクト">
         <TextField label="名前" value={project.name} onChange={(name) => store.execute(updateProject({ name }, "名前を変更"))} />
         <div>

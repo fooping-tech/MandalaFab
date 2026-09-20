@@ -121,6 +121,7 @@ export function RingTree({ store }: { store: EditorStore }) {
                               {e.mode === "keep" ? "keep" : ""}
                               {e.repeat > 1 ? ` ×${e.repeat}` : ""}
                               {e.children && e.children.length > 0 ? ` ⊂${e.children.length}` : ""}
+                              {e.imported && e.imported.confidence < 0.7 ? <span className="text-warn"> ⚠</span> : null}
                             </span>
                           </button>
                           <span className="hidden items-center gap-0.5 group-hover:flex">

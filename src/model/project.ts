@@ -85,6 +85,8 @@ export interface ElementBase {
    * (keep children leave material inside the parent cut, cut children cut into that material).
    */
   children?: SectorElement[];
+  /** Set by Reference Image Import: what the recogniser thought the shape was and how sure it is (0..1). */
+  imported?: { detectedType: string; confidence: number };
 }
 
 export interface BezierElement extends ElementBase {

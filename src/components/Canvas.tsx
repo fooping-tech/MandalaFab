@@ -38,6 +38,7 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
   const hoverEl = useEditor((s) => s.hoverElementId);
   const hoverRing = useEditor((s) => s.hoverRingId);
   const focusedIssue = useEditor((s) => s.focusedIssueId);
+  const reference = useEditor((s) => s.reference);
   const wrapRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
   const [v, setV] = useState<View>({ cx: 0, cy: 0, scale: 3 });
@@ -307,6 +308,21 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
         <path d={sheetPath} fill="#ffffff" filter="url(#sheet-shadow)" />
         {view.grid && view.mode !== "material" && <path d={sheetPath} fill="url(#grid-major)" />}
 
+        {/* Reference image overlay */}
+        {reference && reference.visible && view.diff !== "generated" && (
+          <image
+            href={reference.url}
+            x={-reference.widthMm / 2}
+            y={-(reference.widthMm * reference.pxHeight) / reference.pxWidth / 2}
+            width={reference.widthMm}
+            height={(reference.widthMm * reference.pxHeight) / reference.pxWidth}
+            opacity={view.diff === "reference" ? 1 : reference.opacity}
+            transform={`translate(${reference.x} ${reference.y}) rotate(${reference.rotation})`}
+            preserveAspectRatio="none"
+            pointerEvents="none"
+          />
+        )}
+
         {/* Guides */}
         {view.guides && (
           <g pointerEvents="none">
@@ -350,7 +366,11 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
           </g>
         ) : (
           <g>
-            <path d={d.finalPath} fillRule="evenodd" fill={isMaterial ? bg : "#111111"} stroke={isMaterial ? "none" : "#d84435"} strokeWidth={Math.max(0.12, px)} />
+            {view.diff === "reference" ? null : view.diff === "overlap" ? (
+              <path d={d.finalPath} fillRule="evenodd" fill="#2f7bb5" fillOpacity={0.45} stroke="#1f5f8f" strokeWidth={Math.max(0.12, px)} />
+            ) : (
+              <path d={d.finalPath} fillRule="evenodd" fill={isMaterial ? bg : "#111111"} stroke={isMaterial ? "none" : "#d84435"} strokeWidth={Math.max(0.12, px)} />
+            )}
             {d.elementPaths.map((ep) => {
               const active = ep.elementId === selElId || ep.elementId === hoverEl || (hoverEl === null && ep.ringId === hoverRing) || (selection.kind === "ring" && ep.ringId === selRingId);
               return (
@@ -425,7 +445,17 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
         </button>
       </div>
       <div className="absolute left-8 top-8 rounded bg-paper/85 px-2 py-1 text-[11px] text-ink-2 shadow-sm">
-        {view.mode === "design" ? "デザイン表示: 要素ごとの形状（緑 = keep、赤 = 脱落する島）" : view.mode === "material" ? "材料ビュー: 残る材料が白、抜ける部分は背景色" : "抜きビュー: レーザーで抜ける領域が黒（赤線 = カットライン）"}
+        {view.diff !== "off" && reference
+          ? view.diff === "reference"
+            ? "Difference View: 参照画像のみ"
+            : view.diff === "generated"
+              ? "Difference View: 生成形状のみ"
+              : "Difference View: 参照画像の上に生成形状（青）を重ねて表示"
+          : view.mode === "design"
+            ? "デザイン表示: 要素ごとの形状（緑 = keep、赤 = 脱落する島）"
+            : view.mode === "material"
+              ? "材料ビュー: 残る材料が白、抜ける部分は背景色"
+              : "抜きビュー: レーザーで抜ける領域が黒（赤線 = カットライン）"}
         {render.stale && <span className="ml-2 text-warn">計算中…</span>}
       </div>
       <div className={`absolute bottom-3 left-8 text-[10px] ${isMaterial ? "text-white/70" : "text-ink-3"}`}>ドラッグ: パン · ホイール: スクロール · ⌘/Ctrl+ホイール: ズーム · クリック: 要素選択 · ハンドル: 位置／制御点</div>

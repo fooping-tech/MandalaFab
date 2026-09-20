@@ -44,6 +44,10 @@ v0.2 の生成器は「帯ごとに単純なテンプレートを乱択して独
 
 受け入れ基準（`tests/compose.test.ts`）: Dense Floral Stencil の各帯で意味のある primitive 10 以上・flow 3 本以上・境界接続 1 以上、プロジェクト全体で nested motif 2 種以上・帯間 interlock 2 以上、島 0・検証エラー 0。
 
+## Reference Image Import（v0.4）
+
+ツールバーの「参照画像」から PNG / JPG / WebP / SVG を読み込み、ウィザード（Crop → Threshold → Center → Symmetry → Sector → Vectorize → Convert → Validate）で **編集可能な Sector / Element モデル** に変換します。中心と対称数は自動推定（極座標展開の相関、帯ごとの対称数にも対応、ドラッグ／手動変更可）、輪郭は marching squares → Douglas–Peucker → 3 次 Bézier フィット、形は IoU ベースで teardrop / leaf / circle などに認識（自信がなければ Bézier のまま）、半径クラスタリングでリング化し、対称に揃う形はセクタ 1 つだけを保存して repeat で復元、揃わない形は元の位置で保持します。Trace Only / Stencilize（塗り形状）/ Stencilize cells（線画: 線で囲まれた領域を抜く）の 3 モード、参照画像は半透明 Reference Layer と Difference View で比較できます。詳細は [docs/import.md](docs/import.md)。
+
 ## できること
 
 - 中心モチーフ + リング（セクタ）+ 要素の階層編集（左ツリー / 右インスペクタ / 中央 CAD 風キャンバス）

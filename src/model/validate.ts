@@ -84,6 +84,9 @@ export function normalizeElement(raw: unknown, depth = 0): SectorElement | null 
   };
   if (typeof raw.name === "string") (base as { name?: string }).name = raw.name.slice(0, 60);
   if (typeof raw.role === "string" && ROLES.has(raw.role)) (base as { role?: string }).role = raw.role;
+  if (isRecord(raw.imported) && typeof raw.imported.detectedType === "string") {
+    (base as { imported?: { detectedType: string; confidence: number } }).imported = { detectedType: raw.imported.detectedType.slice(0, 30), confidence: num(raw.imported.confidence, 0, 0, 1) };
+  }
   if (Array.isArray(raw.children) && raw.children.length > 0 && depth < 3) {
     const children = raw.children
       .slice(0, 32)

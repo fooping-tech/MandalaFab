@@ -44,6 +44,7 @@ export function Toolbar({ store, openDialog, canvasApi }: Props) {
       <Btn icon="⚄" label="生成" onClick={() => openDialog("generate")} />
       <Btn icon="⌂" label="開く" onClick={() => void actionOpen(store)} title="JSON / MandalaFab SVG を開く (⌘O)" />
       <Btn icon="⬇" label="保存" onClick={() => actionSaveJSON(store)} title="プロジェクトJSONを保存 (⌘S)" />
+      <Btn icon="🖼" label="参照画像" onClick={() => openDialog("import")} title="Import Reference: 画像を読み込んで曼荼羅プロジェクトへ変換" />
       <Sep />
       <Btn icon="↶" label="戻す" onClick={() => store.undo()} disabled={!canUndo} title="元に戻す (⌘Z)" />
       <Btn icon="↷" label="進む" onClick={() => store.redo()} disabled={!canRedo} title="やり直し (⌘⇧Z)" />

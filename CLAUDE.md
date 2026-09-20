@@ -42,4 +42,5 @@ npm run preview
 - Clipper へ領域を渡すときは `RegionNode.children`（穴の中の領域）まで再帰的に投入する（`addRegions`）。省くと中心部が消える。
 - 有機モチーフは Bézier（`geometry/bezier.ts`）で作る。単純な circle/petal の repeat だけのプリセットは作らない。
 - プリセットは手で書かず `GALLERY=1 npx vitest run scripts/make-presets.test.ts` で Composition Engine（`src/generate/compose.ts`）から再生成する。受け入れ基準は `tests/compose.test.ts`。
+- Reference Image Import（`src/import/`）は React 非依存で Worker 実行。実画像での検証は `GALLERY=1 BMP=<24bit BMP> npx vitest run scripts/user-image.test.ts`（`sips -s format bmp` で変換）と Playwright の `import.mjs`。線画は cells モード、対称数は帯ごとに違う前提で扱う。
 - 生成器のテンプレートを変えたら `GALLERY=1 npx vitest run scripts/sector-view.test.ts`（1 セクタ拡大）と `scripts/gallery.test.ts` で目視確認する。島（islandsBefore）が増えたら配置の衝突が原因なので `fits()` の条件を疑う。

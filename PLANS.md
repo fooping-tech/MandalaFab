@@ -88,3 +88,23 @@
 - ギャラリー（`GALLERY=presets npx vitest run scripts/gallery.test.ts`）: 5 プリセットとも islandsBefore ≤ 24、島 0、ブリッジは蔓を渡る短いものだけ。目視でレース／フィリグリー／アラベスクの印象を確認（帯をまたぐ蔓、縁取り雫の中の雫、向かい合うペイズリー）。
 - ビルド成功。ブラウザ確認（Playwright）: 初期表示が新しい Dense Floral Stencil、ツリーに役割バッジと子要素、要素選択でインスペクタの「内部モチーフ」表示、コンソールエラーなし。
 - 未検証・限界: 実機加工は未検証。`fillFreeSpace` は格子候補からの充填で、密度を上げるとドットが目立つ。曲線の「接線接触」は材料ギャップ（boundaryGap）を挟む表現。12 分割の最内帯は幅不足のため分割数を半分にしている。
+
+## Reference Image Import（2026-09-20）
+
+### 要求
+
+- 手描き／画像の曼荼羅（PNG / JPG / WebP / SVG）をアップロードし、Sector / Element モデルへ変換する Import Wizard（Crop → Threshold → Center → Symmetry → Sector → Vectorize → Convert → Validate）。前処理（threshold / invert / blur / denoise / contrast、背景の明暗両対応）、中心推定（ドラッグ修正可）、対称数推定（上位 3 候補、手動変更可）、ミラー検出と半セクタ化、ブラウザ内ベクタ化（simplify / Douglas–Peucker / cubic Bézier）、プリミティブ認識（自信がなければ Bézier 保持、confidence 表示）、リング検出（半径クラスタリング）、Trace Only / Stencilize、Reference overlay（visibility / opacity / scale / rotation / offset）、Difference View、Web Worker 実行。受け入れ: 12 回対称の手描き画像 → 12-fold・30° セクタ・Bézier 化・repeat=12 復元・overlay と概ね一致・SVG 書き出し・編集可能。
+- 追加依頼: 提供された画像 `7822A586-…_1_105_c.jpeg`（886 px の線画曼荼羅）でテストする。
+
+### 実装
+
+- `src/import/`: `preprocess.ts`（Otsu / 適応しきい値 / 背景判定 / モルフォロジー）、`center-detect.ts`（モーメント・外接矩形・大円輪郭の重心・180° 自己相似の微調整）、`symmetry-detect.ts`（極座標展開 + ぼかし + 360/n 列シフトの 2D 相関、中心の同時最適化、帯ごとの対称数とミラー軸）、`contours.ts`（marching squares、穴の包含判定、線画の cells 抽出、線幅推定）、`bezier-fit.ts`（DP、角分割、Schneider フィット、長い輪郭のチャンク分割）、`primitive-recognition.ts`（候補形状を生成して IoU、採用 0.88）、`ring-cluster.ts`、`sector-extract.ts`（コピーのクラスタ化と代表選択、揃わない形は world 保持）、`project-converter.ts`（中心リング・Unmatched リング・帯ごとの n によるセクタリング、穴は keep 子要素、Trace / Stencilize / cells、線幅に応じた許容誤差）、`raster.ts`、`import.worker.ts` + `client.ts`。
+- モデル: `SectorElement.imported { detectedType, confidence }`。UI: ツールバー「参照画像」、`ImportReferenceDialog`（8 ステップ、crop / center ドラッグ、帯ごとの対称数表示、3 モード、線画自動判定、Worker での検証）、Reference Layer と Canvas の overlay / Difference View、インスペクタの参照画像パネル、低 confidence の警告。
+- スクリプト: `scripts/user-image.test.ts`（BMP からパイプライン一式を実行）、`scripts/debug-polar.test.ts`（極座標展開の可視化）、`scripts/make-sample.test.ts`。
+
+### 結果
+
+- テスト: `npm test` 10 ファイル 84 件成功。`tests/import.test.ts` は合成 12 回対称画像で 前処理（明背景・暗背景で IoU > 0.98）→ 中心（±4 px）→ 対称数 12 とミラー軸 → 輪郭（面積誤差 < 10 %）→ DP / Bézier の誤差 → 認識（teardrop 35° 回転・circle・非対称形は bezier）→ リング分割 → 変換（symmetry 12、repeat 12 のリング、mirrorLocal、再生成の IoU > 0.6、SVG 書き出し）→ Stencilize（島 0）を検証。
+- 提供画像（線画、帯ごとに 8 / 16 / 12 / 16 回対称）: Playwright でウィザードを最後まで実行（コンソールエラーなし）。線幅 0.73 mm を検出して cells モードを自動選択、803 セル → 248 要素・4 リング（220 は対称に揃わず元位置で保持）・自動ブリッジ 583・島 0、取り込み後のジオメトリ 367 ms + 検証 409 ms、SVG 書き出し可。Trace Only では線画を忠実に再現。
+- 途中で判明し修正した点: 既定 denoise=1 と多数決ダウンスケールが 3 px の線を消していた／回転差分の比率は細線・同心円で判別できなかった（極座標相関へ変更）／線画では全体が 1 つの輪郭（穴 27 個）になりセクタ化が効かない（揃わない形は world 保持へ）／長い輪郭の Bézier フィットが破綻していた（チャンク分割・失敗時は直線保持）／Otsu の境界が 2 値画像で上限側に張り付いていた。
+- 未達・限界: 提供画像は帯ごとに対称数が異なるため「30° セクタ 1 つに縮約」はできず、帯ごとの repeat（16 / 10 など）で部分的にセクタ化し残りは元位置で保持した。認識は塗り形状向けで、線画では Bézier 保持が中心。実機加工は未検証。
