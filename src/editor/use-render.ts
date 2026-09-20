@@ -22,18 +22,31 @@ export function useRender(project: Project): RenderState {
   const worker = useRef<Worker | null>(null);
   const nextId = useRef(1);
   const first = useRef(true);
+  /** Newest project not yet sent while the worker is busy. */
+  const pending = useRef<Project | null>(null);
+  const inFlight = useRef(false);
+  const send = useRef<(p: Project) => void>(() => {});
 
   useEffect(() => {
     if (typeof Worker === "undefined") return;
     const w = new Worker(new URL("./render.worker.ts", import.meta.url), { type: "module" });
     worker.current = w;
     let current = 0;
+    send.current = (p: Project) => {
+      const id = nextId.current++;
+      inFlight.current = true;
+      w.postMessage({ id, project: p } satisfies WorkerRequest);
+    };
     w.onmessage = (ev: MessageEvent<WorkerResponse>) => {
       const msg = ev.data;
       if (msg.id < current) return;
       current = msg.id;
       if (msg.phase === "stencil") {
-        setState((s) => ({ data: { ...msg.data, validation: null, issuePaths: [], validationMs: 0 }, stale: msg.id !== nextId.current - 1, validating: true, error: s.error }));
+        inFlight.current = false;
+        const next = pending.current;
+        pending.current = null;
+        if (next) send.current(next); // drop every intermediate state, compute only the newest
+        setState((s) => ({ data: { ...msg.data, validation: null, issuePaths: [], validationMs: 0 }, stale: next !== null, validating: true, error: s.error }));
       } else if (msg.phase === "validation") {
         setState((s) => ({ ...s, data: { ...s.data, validation: msg.data.validation, issuePaths: msg.data.issuePaths, validationMs: msg.data.computeMs }, validating: false, error: null }));
       } else {
@@ -56,9 +69,9 @@ export function useRender(project: Project): RenderState {
       setState({ data: computeRender(project), stale: false, validating: false, error: null });
       return;
     }
-    const id = nextId.current++;
     setState((s) => ({ ...s, stale: true, validating: true }));
-    w.postMessage({ id, project } satisfies WorkerRequest);
+    if (inFlight.current) pending.current = project;
+    else send.current(project);
   }, [project]);
 
   return state;

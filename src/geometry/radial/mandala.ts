@@ -48,9 +48,30 @@ export function generateRing(ring: Ring, project: Project): RingGeometry {
   return { ringId: ring.id, instances, apertures, elements, notes: sector.notes };
 }
 
+/**
+ * Per-ring cache: rings are immutable objects, so an unchanged ring (same
+ * reference, same compounds and constraints) reuses its geometry. Editing one
+ * ring then only rebuilds that ring; the union stage still runs globally.
+ */
+const ringCache = new WeakMap<Ring, { compounds: Project["compounds"]; minFeatureWidth: number; geometry: RingGeometry }>();
+const centerCache = new WeakMap<Project["center"], Region[]>();
+
 export function generateMandala(project: Project): MandalaGeometry {
-  const rings = project.rings.filter((r) => r.visible).map((r) => generateRing(r, project));
-  return { center: buildCenter(project.center), rings, symmetry: project.symmetry };
+  const rings = project.rings
+    .filter((r) => r.visible)
+    .map((r) => {
+      const hit = ringCache.get(r);
+      if (hit && hit.compounds === project.compounds && hit.minFeatureWidth === project.constraints.minFeatureWidth) return hit.geometry;
+      const geometry = generateRing(r, project);
+      ringCache.set(r, { compounds: project.compounds, minFeatureWidth: project.constraints.minFeatureWidth, geometry });
+      return geometry;
+    });
+  let center = centerCache.get(project.center);
+  if (!center) {
+    center = buildCenter(project.center);
+    centerCache.set(project.center, center);
+  }
+  return { center, rings, symmetry: project.symmetry };
 }
 
 /** All raw closed contours of a mandala (for duplicate/self-intersection checks). */

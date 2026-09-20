@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CanvasApi } from "../app/App";
-import { setBezierPoint, updateElement } from "../editor/commands";
+import { setBezierPoint, updateElement, updateRing } from "../editor/commands";
 import { contourToPath } from "../editor/pipeline";
 import { useRenderState } from "../editor/render-context";
 import { useEditor, type EditorStore } from "../editor/store";
@@ -28,7 +28,22 @@ function niceStep(scale: number, px: number): number {
   return 1000;
 }
 
-type DragState = { kind: "pan"; x: number; y: number; cx: number; cy: number; moved: boolean } | { kind: "handle"; ringId: string; elementId: string; handle: "origin" | number; moved: boolean };
+type HandleKind = "origin" | "rotate" | "length" | "width" | "ring-radius" | number;
+type DragState = { kind: "pan"; x: number; y: number; cx: number; cy: number; moved: boolean } | { kind: "handle"; ringId: string; elementId: string | null; handle: HandleKind; moved: boolean };
+
+const WHEEL_KEY = "mandalafab-wheel-zoom";
+function loadWheelZoom(): boolean {
+  try {
+    return localStorage.getItem(WHEEL_KEY) !== "scroll";
+  } catch {
+    return true;
+  }
+}
+
+/** One element's outline. Memoised so hovering / selecting one element does not repaint the others. */
+const ElementPath = memo(function ElementPath({ ringId, elementId, d, fill, fillOpacity, stroke, strokeWidth, onEnter, onLeave }: { ringId: string; elementId: string; d: string; fill: string; fillOpacity: number; stroke: string; strokeWidth: number; onEnter: (r: string, e: string) => void; onLeave: () => void }) {
+  return <path data-ring={ringId} data-element={elementId} d={d} fillRule="evenodd" fill={fill} fillOpacity={fillOpacity} stroke={stroke} strokeWidth={strokeWidth} style={{ cursor: "pointer" }} onPointerEnter={() => onEnter(ringId, elementId)} onPointerLeave={onLeave} />;
+});
 
 export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: CanvasApi) => void }) {
   const render = useRenderState();
@@ -43,6 +58,11 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
   const [size, setSize] = useState({ w: 800, h: 600 });
   const [v, setV] = useState<View>({ cx: 0, cy: 0, scale: 3 });
   const drag = useRef<DragState | null>(null);
+  const [wheelZoom, setWheelZoom] = useState(loadWheelZoom);
+  const wheelZoomRef = useRef(wheelZoom);
+  wheelZoomRef.current = wheelZoom;
+  const onEnter = useCallback((r: string, e: string) => store.hover(r, e), [store]);
+  const onLeave = useCallback(() => store.hover(null), [store]);
   const pinch = useRef<Map<number, { x: number; y: number }>>(new Map());
   const pinchStart = useRef<{ dist: number; scale: number } | null>(null);
 
@@ -98,8 +118,11 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
       e.preventDefault();
       const rect = el.getBoundingClientRect();
       const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
-      if (e.ctrlKey || e.metaKey) {
-        const factor = Math.exp(-Math.max(-300, Math.min(300, e.deltaY * unit)) * 0.005);
+      // Wheel = zoom (default) unless the user switched to scroll mode; ⌘/Ctrl always zooms, Shift always scrolls.
+      const zoom = e.ctrlKey || e.metaKey || (wheelZoomRef.current && !e.shiftKey);
+      if (zoom) {
+        // ~1.3× per mouse-wheel notch (deltaY ≈ 100), smooth for trackpads.
+        const factor = Math.exp(-Math.max(-300, Math.min(300, e.deltaY * unit)) * 0.0026);
         zoomAt(factor, e.clientX - rect.left, e.clientY - rect.top);
       } else {
         setV((old) => ({ ...old, cx: old.cx + (e.deltaX * unit) / old.scale, cy: old.cy + (e.deltaY * unit) / old.scale }));
@@ -138,9 +161,12 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
     }
     const target = e.target as Element;
     const handle = target.getAttribute?.("data-handle");
-    if (handle && selRing && selEl && e.button === 0) {
-      drag.current = { kind: "handle", ringId: selRing.id, elementId: selEl.id, handle: handle === "origin" ? "origin" : Number(handle), moved: false };
-      return;
+    if (handle && selRing && e.button === 0) {
+      const kind: HandleKind = handle === "origin" || handle === "rotate" || handle === "length" || handle === "width" || handle === "ring-radius" ? handle : Number(handle);
+      if (kind === "ring-radius" || selEl) {
+        drag.current = { kind: "handle", ringId: selRing.id, elementId: selEl?.id ?? null, handle: kind, moved: false };
+        return;
+      }
     }
     drag.current = { kind: "pan", x: e.clientX, y: e.clientY, cx: v.cx, cy: v.cy, moved: false };
   };
@@ -159,11 +185,39 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
     if (!d) return;
     if (d.kind === "handle") {
       d.moved = true;
-      if (!sectorT || !elT) return;
+      if (!sectorT) return;
+      const snap = e.shiftKey;
+      if (d.handle === "ring-radius" && selRing) {
+        // Drag along the sector axis: new radius = distance from the mandala center.
+        const r = Math.hypot(p.x, p.y);
+        const val = snap ? Math.round(r) : Math.round(r * 10) / 10;
+        store.execute(updateRing(d.ringId, { radius: Math.max(0, val) }, "半径を変更"));
+        return;
+      }
+      if (!elT || !selEl || !d.elementId) return;
+      const s = worldToSector(p);
       if (d.handle === "origin") {
-        const s = worldToSector(p);
         store.execute(updateElement(d.ringId, d.elementId, { x: Math.round(s.x * 10) / 10, y: Math.round(s.y * 10) / 10 }, "要素を移動"));
-      } else {
+      } else if (d.handle === "rotate") {
+        // Angle of the pointer around the element origin, minus the automatic radial orientation.
+        const radial = selEl.orient === "radial" ? Math.atan2(selEl.y, selEl.x + selRing!.radius) : 0;
+        let deg = ((Math.atan2(s.y - selEl.y, s.x - selEl.x) - radial) * 180) / Math.PI;
+        if (snap) deg = Math.round(deg / 15) * 15;
+        deg = Math.round((((deg + 540) % 360) - 180) * 10) / 10;
+        store.execute(updateElement(d.ringId, d.elementId, { rotation: deg }, "要素を回転"));
+      } else if (d.handle === "length" || d.handle === "width") {
+        // Project the pointer onto the element axis / normal (local frame) to size the shape.
+        const local = worldToLocal(p);
+        if (d.handle === "length") {
+          let len = Math.max(0.2, Math.abs(local.x) * 2);
+          if (snap) len = Math.round(len);
+          store.execute(updateElement(d.ringId, d.elementId, { length: Math.round(len * 10) / 10 }, "長さを変更"));
+        } else {
+          let wid = Math.max(0.2, Math.abs(local.y) * 2);
+          if (snap) wid = Math.round(wid);
+          store.execute(updateElement(d.ringId, d.elementId, { width: Math.round(wid * 10) / 10 }, "幅を変更"));
+        }
+      } else if (typeof d.handle === "number") {
         store.execute(setBezierPoint(d.ringId, d.elementId, d.handle, worldToLocal(p)));
       }
       return;
@@ -238,9 +292,12 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
     if (!selEl || !sectorT || !elT) return null;
     const origin = applyTransform({ x: selEl.x, y: selEl.y }, sectorT);
     const axisTip = applyTransform(applyElementTransform({ x: selEl.length / 2, y: 0 }, elT), sectorT);
+    const widthTip = applyTransform(applyElementTransform({ x: 0, y: selEl.width / 2 }, elT), sectorT);
+    const rotateTip = applyTransform(applyElementTransform({ x: selEl.length / 2 + 6 / v.scale + 2, y: 0 }, elT), sectorT);
     const points = selEl.type === "bezier" ? selEl.points.map((p) => applyTransform(applyElementTransform(p, elT), sectorT)) : [];
-    return { origin, axisTip, points };
-  }, [selEl, sectorT, elT]);
+    return { origin, axisTip, widthTip, rotateTip, points };
+  }, [selEl, sectorT, elT, v.scale]);
+  const ringHandle = useMemo(() => (selRing && sectorT && !selEl ? applyTransform({ x: 0, y: 0 }, sectorT) : null), [selRing, sectorT, selEl]);
 
   return (
     <div ref={wrapRef} className="relative min-h-0 min-w-0 select-none overflow-hidden" style={{ touchAction: "none", background: bg }}>
@@ -355,20 +412,7 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
         {isPreview ? null : view.mode === "design" ? (
           <g>
             {d.elementPaths.map((ep) => (
-              <path
-                key={`${ep.ringId}/${ep.elementId}`}
-                data-ring={ep.ringId}
-                data-element={ep.elementId}
-                d={ep.d}
-                fillRule="evenodd"
-                fill={elementFill(ep)}
-                fillOpacity={ep.mode === "keep" ? 0.9 : 0.85}
-                stroke={ep.mode === "keep" ? "#3f8f6b" : "none"}
-                strokeWidth={px}
-                style={{ cursor: "pointer" }}
-                onPointerEnter={() => store.hover(ep.ringId, ep.elementId)}
-                onPointerLeave={() => store.hover(null)}
-              />
+              <ElementPath key={`${ep.ringId}/${ep.elementId}`} ringId={ep.ringId} elementId={ep.elementId} d={ep.d} fill={elementFill(ep)} fillOpacity={ep.mode === "keep" ? 0.9 : 0.85} stroke={ep.mode === "keep" ? "#3f8f6b" : "none"} strokeWidth={px} onEnter={onEnter} onLeave={onLeave} />
             ))}
             {d.islandPath && <path d={d.islandPath} fill="#f7c6c0" fillOpacity={0.6} stroke="#d84435" strokeWidth={px} pointerEvents="none" />}
           </g>
@@ -381,20 +425,7 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
             )}
             {d.elementPaths.map((ep) => {
               const active = ep.elementId === selElId || ep.elementId === hoverEl || (hoverEl === null && ep.ringId === hoverRing) || (selection.kind === "ring" && ep.ringId === selRingId);
-              return (
-                <path
-                  key={`${ep.ringId}/${ep.elementId}`}
-                  data-ring={ep.ringId}
-                  data-element={ep.elementId}
-                  d={ep.d}
-                  fillRule="evenodd"
-                  fill={active ? "#2f7bb5" : "transparent"}
-                  fillOpacity={0.35}
-                  style={{ cursor: "pointer" }}
-                  onPointerEnter={() => store.hover(ep.ringId, ep.elementId)}
-                  onPointerLeave={() => store.hover(null)}
-                />
-              );
+              return <ElementPath key={`${ep.ringId}/${ep.elementId}`} ringId={ep.ringId} elementId={ep.elementId} d={ep.d} fill={active ? "#2f7bb5" : "transparent"} fillOpacity={0.35} stroke="none" strokeWidth={0} onEnter={onEnter} onLeave={onLeave} />;
             })}
           </g>
         )}
@@ -430,7 +461,22 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
               const anchor = i % 3 === 0;
               return <circle key={i} data-handle={i} cx={p.x} cy={p.y} r={(anchor ? 5 : 4) * px} fill={anchor ? "#1f7ac0" : "#ffffff"} stroke="#1f7ac0" strokeWidth={1.2 * px} style={{ cursor: "move" }} aria-label={anchor ? "アンカーポイント" : "制御点"} />;
             })}
+            {selEl && selEl.type !== "bezier" && selEl.type !== "connector" && selEl.type !== "compound" && (
+              <>
+                <line x1={handles.origin.x} y1={handles.origin.y} x2={handles.widthTip.x} y2={handles.widthTip.y} stroke="#2f7bb5" strokeWidth={px} strokeDasharray={`${3 * px} ${3 * px}`} pointerEvents="none" />
+                <rect data-handle="length" x={handles.axisTip.x - 4 * px} y={handles.axisTip.y - 4 * px} width={8 * px} height={8 * px} fill="#2f7bb5" stroke="#ffffff" strokeWidth={px} style={{ cursor: "ew-resize" }} aria-label="長さ" />
+                <rect data-handle="width" x={handles.widthTip.x - 4 * px} y={handles.widthTip.y - 4 * px} width={8 * px} height={8 * px} fill="#2f7bb5" stroke="#ffffff" strokeWidth={px} style={{ cursor: "ns-resize" }} aria-label="幅" />
+              </>
+            )}
+            <line x1={handles.axisTip.x} y1={handles.axisTip.y} x2={handles.rotateTip.x} y2={handles.rotateTip.y} stroke="#c8793f" strokeWidth={px} pointerEvents="none" />
+            <circle data-handle="rotate" cx={handles.rotateTip.x} cy={handles.rotateTip.y} r={5.5 * px} fill="#ffffff" stroke="#c8793f" strokeWidth={1.4 * px} style={{ cursor: "grab" }} aria-label="回転（Shift で 15° 刻み）" />
             <rect data-handle="origin" x={handles.origin.x - 5 * px} y={handles.origin.y - 5 * px} width={10 * px} height={10 * px} fill="#ffffff" stroke="#2f7bb5" strokeWidth={1.2 * px} style={{ cursor: "move" }} aria-label="要素の位置" />
+          </g>
+        )}
+        {ringHandle && !isPreview && (
+          <g>
+            <line x1={0} y1={0} x2={ringHandle.x} y2={ringHandle.y} stroke="#2f7bb5" strokeWidth={px} strokeDasharray={`${3 * px} ${3 * px}`} pointerEvents="none" />
+            <circle data-handle="ring-radius" cx={ringHandle.x} cy={ringHandle.y} r={6 * px} fill="#ffffff" stroke="#2f7bb5" strokeWidth={1.4 * px} style={{ cursor: "move" }} aria-label="リングの半径" />
           </g>
         )}
 
@@ -442,6 +488,22 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
       </svg>
 
       <div className="absolute bottom-3 right-3 flex items-center gap-1">
+        <button
+          type="button"
+          className={`canvas-btn text-[10px] ${wheelZoom ? "" : "opacity-70"}`}
+          title="ホイールの動作: ズーム / スクロール（⌘/Ctrl+ホイールは常にズーム、Shift+ホイールは常にスクロール）"
+          onClick={() => {
+            const next = !wheelZoom;
+            setWheelZoom(next);
+            try {
+              localStorage.setItem(WHEEL_KEY, next ? "zoom" : "scroll");
+            } catch {
+              /* ignore */
+            }
+          }}
+        >
+          {wheelZoom ? "ホイール: ズーム" : "ホイール: スクロール"}
+        </button>
         <button type="button" className="canvas-btn" onClick={() => zoomAt(1 / 1.25)} title="縮小">
           −
         </button>
@@ -468,7 +530,9 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
               : "抜きビュー: レーザーで抜ける領域が黒（赤線 = カットライン）"}
         {render.stale && <span className="ml-2 text-warn">計算中…</span>}
       </div>
-      <div className={`absolute bottom-3 left-8 text-[10px] ${isMaterial ? "text-white/70" : "text-ink-3"}`}>ドラッグ: パン · ホイール: スクロール · ⌘/Ctrl+ホイール: ズーム · クリック: 要素選択 · ハンドル: 位置／制御点</div>
+      <div className={`absolute bottom-3 left-8 text-[10px] ${isMaterial ? "text-white/70" : "text-ink-3"}`}>
+        ドラッグ: パン · {wheelZoom ? "ホイール: ズーム · Shift+ホイール: スクロール" : "ホイール: スクロール · ⌘/Ctrl+ホイール: ズーム"} · クリック: 要素選択 · ハンドル: 位置 / 長さ / 幅 / 回転（Shift でスナップ） · 矢印キー: 移動 · [ ]: 回転
+      </div>
     </div>
   );
 }

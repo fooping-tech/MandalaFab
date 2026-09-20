@@ -10,6 +10,7 @@ import { HelpDialog } from "../components/dialogs/HelpDialog";
 import { ShareDialog } from "../components/dialogs/ShareDialog";
 import { ImportReferenceDialog } from "../components/dialogs/ImportReferenceDialog";
 import { actionAddRing, actionDeleteSelected, actionExportSVG, actionOpen, actionSaveJSON } from "../editor/actions";
+import { findElementDeep, updateElement, updateRing } from "../editor/commands";
 import { saveLocal } from "../editor/persist";
 import { RenderContext } from "../editor/render-context";
 import { useRender } from "../editor/use-render";
@@ -60,6 +61,31 @@ export function App({ store }: { store: EditorStore }) {
         return;
       }
       if (typing) return;
+      // Nudge the selection: arrows move (0.5 mm, Shift 2 mm), [ ] rotate (5°, Shift 15°), < > scale (5 %).
+      const sel = store.getState().selection;
+      if (sel.kind === "element" || sel.kind === "ring") {
+        const ring = store.getState().project.rings.find((r) => r.id === sel.ringId);
+        const el = sel.kind === "element" && ring ? findElementDeep(ring.elements, sel.elementId) : undefined;
+        const stepMm = e.shiftKey ? 2 : 0.5;
+        const stepDeg = e.shiftKey ? 15 : 5;
+        const r1 = (v: number): number => Math.round(v * 10) / 10;
+        if (el && sel.kind === "element") {
+          const move = (dx: number, dy: number): void => store.execute(updateElement(sel.ringId, sel.elementId, { x: r1(el.x + dx), y: r1(el.y + dy) }, "要素を移動"));
+          if (e.key === "ArrowRight") return void (e.preventDefault(), move(stepMm, 0));
+          if (e.key === "ArrowLeft") return void (e.preventDefault(), move(-stepMm, 0));
+          if (e.key === "ArrowDown") return void (e.preventDefault(), move(0, stepMm));
+          if (e.key === "ArrowUp") return void (e.preventDefault(), move(0, -stepMm));
+          if (e.key === "[" || e.key === "{") return void store.execute(updateElement(sel.ringId, sel.elementId, { rotation: r1(((el.rotation - stepDeg + 540) % 360) - 180) }, "要素を回転"));
+          if (e.key === "]" || e.key === "}") return void store.execute(updateElement(sel.ringId, sel.elementId, { rotation: r1(((el.rotation + stepDeg + 540) % 360) - 180) }, "要素を回転"));
+          if (e.key === "<" || e.key === ",") return void store.execute(updateElement(sel.ringId, sel.elementId, { length: r1(Math.max(0.2, el.length * 0.95)), width: r1(Math.max(0.2, el.width * 0.95)) }, "縮小"));
+          if (e.key === ">" || e.key === ".") return void store.execute(updateElement(sel.ringId, sel.elementId, { length: r1(el.length * 1.05), width: r1(el.width * 1.05) }, "拡大"));
+        } else if (ring && sel.kind === "ring") {
+          if (e.key === "ArrowUp" || e.key === "ArrowRight") return void (e.preventDefault(), store.execute(updateRing(ring.id, { radius: r1(ring.radius + stepMm) }, "半径を変更")));
+          if (e.key === "ArrowDown" || e.key === "ArrowLeft") return void (e.preventDefault(), store.execute(updateRing(ring.id, { radius: r1(Math.max(0, ring.radius - stepMm)) }, "半径を変更")));
+          if (e.key === "[" || e.key === "{") return void store.execute(updateRing(ring.id, { phase: r1(ring.phase - stepDeg) }, "位相を変更"));
+          if (e.key === "]" || e.key === "}") return void store.execute(updateRing(ring.id, { phase: r1(ring.phase + stepDeg) }, "位相を変更"));
+        }
+      }
       if (e.key === "Escape") {
         store.select({ kind: "project" });
         setDialog(null);

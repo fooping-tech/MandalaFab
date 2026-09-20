@@ -23,7 +23,7 @@ self.onmessage = (ev: MessageEvent<WorkerRequest>) => {
   try {
     const staged = computeStaged(project);
     (self as unknown as Worker).postMessage({ id, phase: "stencil", data: staged.stencil } satisfies WorkerResponse);
-    // Validation is expensive; skip it if a newer project already arrived.
+    // Validation is expensive: run it only once the design has settled for a moment.
     setTimeout(() => {
       if (latest !== id) return;
       try {
@@ -32,7 +32,7 @@ self.onmessage = (ev: MessageEvent<WorkerRequest>) => {
       } catch (e) {
         (self as unknown as Worker).postMessage({ id, phase: "error", message: e instanceof Error ? e.message : String(e) } satisfies WorkerResponse);
       }
-    }, 0);
+    }, 250);
   } catch (e) {
     (self as unknown as Worker).postMessage({ id, phase: "error", message: e instanceof Error ? e.message : String(e) } satisfies WorkerResponse);
   }
