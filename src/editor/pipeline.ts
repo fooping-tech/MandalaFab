@@ -10,7 +10,7 @@ import { bridgeContour } from "../geometry/stencil/bridges";
 import { flattenRegions } from "../geometry/boolean";
 import type { Contour, Region } from "../geometry/types";
 import { validateStencil, type ValidationResult, type ValidationStats } from "../validation";
-import { formatNumber } from "../export/svg";
+import { formatNumber, regionsPathData } from "../export/svg";
 
 export interface IssuePath {
   id: string;
@@ -35,6 +35,9 @@ export interface StencilRender {
   centerPath: string;
   /** Final apertures after union + bridges (evenodd compound path) = what is exported. */
   finalPath: string;
+  /** The exact path data the SVG export writes (optimised, deduplicated), in design coordinates. */
+  exportPath: string;
+  exportSubpaths: number;
   bridgePath: string;
   islandPath: string;
   notes: string[];
@@ -98,12 +101,15 @@ export function computeStaged(project: Project): Staged {
   if (centerPath) elementPaths.push({ ringId: CENTER_ID, elementId: CENTER_ID, mode: "cut", d: centerPath });
   const finalFlat = flattenRegions(stencilGeom.final);
   const finalPath = regionsToPath(finalFlat);
+  const exported = regionsPathData(stencilGeom.final, { x: 0, y: 0 }, 3);
   const subpaths = finalFlat.reduce((n, r) => n + 1 + r.holes.length, 0);
   const stencil: StencilRender = {
     elementPaths,
     ringPaths,
     centerPath,
     finalPath,
+    exportPath: exported.d,
+    exportSubpaths: exported.subpaths,
     bridgePath: stencilGeom.bridges.map((b) => contourToPath(bridgeContour(b))).join(""),
     islandPath: stencilGeom.islandsBefore.map((i) => contourToPath(i.contour)).join(""),
     notes: geometry.rings.flatMap((r) => r.notes),

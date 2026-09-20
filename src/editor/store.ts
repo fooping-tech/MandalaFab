@@ -2,7 +2,7 @@ import { useSyncExternalStore } from "react";
 import type { Project } from "../model/project";
 import type { Command } from "./commands";
 
-export type ViewMode = "design" | "material" | "cutout";
+export type ViewMode = "design" | "material" | "cutout" | "preview";
 export type DiffMode = "off" | "reference" | "generated" | "overlap";
 
 /** Reference image overlay (session state, not part of the project JSON). */
@@ -167,6 +167,18 @@ export class EditorStore {
 
   setView(patch: Partial<ViewState>): void {
     this.set({ view: { ...this.state.view, ...patch } });
+  }
+
+  private lastNonPreview: ViewMode = "material";
+
+  /** Toggle the manufacturing preview (cut lines only, exactly what the SVG export contains). */
+  togglePreview(): void {
+    const v = this.state.view;
+    if (v.mode === "preview") this.setView({ mode: this.lastNonPreview });
+    else {
+      this.lastNonPreview = v.mode;
+      this.setView({ mode: "preview" });
+    }
   }
 
   setReference(ref: ReferenceLayer | null): void {

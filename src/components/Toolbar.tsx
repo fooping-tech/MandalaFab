@@ -54,6 +54,7 @@ export function Toolbar({ store, openDialog, canvasApi }: Props) {
       <Btn icon="◌" label="デザイン" onClick={() => store.setView({ mode: "design" })} active={view.mode === "design"} title="要素ごとの形状（S で切替）" />
       <Btn icon="▢" label="材料" onClick={() => store.setView({ mode: "material" })} active={view.mode === "material"} title="Material View: 残る材料を白で表示" />
       <Btn icon="■" label="抜き" onClick={() => store.setView({ mode: "cutout" })} active={view.mode === "cutout"} title="Cutout View: レーザーで抜ける領域を黒で表示" />
+      <Btn icon="✂" label="加工プレビュー" onClick={() => store.togglePreview()} active={view.mode === "preview"} title="加工プレビュー: 書き出される SVG と同じカットライン（赤）だけを表示 (P)" />
       <Btn icon="▦" label="グリッド" onClick={() => store.setView({ grid: !view.grid })} active={view.grid} title="グリッド (G)" />
       <Btn icon="✳" label="ガイド" onClick={() => store.setView({ guides: !view.guides })} active={view.guides} title="中心・放射・セクタガイド" />
       <Btn icon="⚠" label="問題" onClick={() => store.setView({ showIssues: !view.showIssues })} active={view.showIssues} title="検証で見つかった領域をハイライト" />

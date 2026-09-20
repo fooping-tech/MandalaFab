@@ -71,8 +71,9 @@ export function App({ store }: { store: EditorStore }) {
       else if (e.key === "g") store.setView({ grid: !store.getState().view.grid });
       else if (e.key === "s") {
         const v = store.getState().view;
-        store.setView({ mode: VIEW_CYCLE[(VIEW_CYCLE.indexOf(v.mode) + 1) % VIEW_CYCLE.length]! });
-      }
+        const i = VIEW_CYCLE.indexOf(v.mode);
+        store.setView({ mode: VIEW_CYCLE[(i < 0 ? 0 : i + 1) % VIEW_CYCLE.length]! });
+      } else if (e.key === "p") store.togglePreview();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

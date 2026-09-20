@@ -214,6 +214,7 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
   const selRingId = selRing?.id ?? null;
   const selElId = selEl?.id ?? null;
   const isMaterial = view.mode === "material";
+  const isPreview = view.mode === "preview";
   const bg = isMaterial ? "#5b6470" : "#e9edf1";
 
   const elementFill = (ep: { ringId: string; elementId: string; mode: "cut" | "keep" }): string => {
@@ -306,7 +307,7 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
 
         {/* Sheet */}
         <path d={sheetPath} fill="#ffffff" filter="url(#sheet-shadow)" />
-        {view.grid && view.mode !== "material" && <path d={sheetPath} fill="url(#grid-major)" />}
+        {view.grid && view.mode !== "material" && !isPreview && <path d={sheetPath} fill="url(#grid-major)" />}
 
         {/* Reference image overlay */}
         {reference && reference.visible && view.diff !== "generated" && (
@@ -324,7 +325,7 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
         )}
 
         {/* Guides */}
-        {view.guides && (
+        {view.guides && !isPreview && (
           <g pointerEvents="none">
             <line x1={-guideR} y1={0} x2={guideR} y2={0} stroke="#9fb3c8" strokeWidth={px} strokeDasharray={`${6 * px} ${4 * px}`} />
             <line x1={0} y1={-guideR} x2={0} y2={guideR} stroke="#9fb3c8" strokeWidth={px} strokeDasharray={`${6 * px} ${4 * px}`} />
@@ -343,8 +344,15 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
           </g>
         )}
 
+        {/* Manufacturing preview: only the cut lines the SVG export writes (red hairlines), no overlays. */}
+        {isPreview && (
+          <g pointerEvents="none">
+            {project.sheet.outline && <path d={sheetPath} fill="none" stroke="#d84435" strokeWidth={Math.max(0.15, px)} />}
+            <path d={d.exportPath} fillRule="evenodd" fill="none" stroke="#d84435" strokeWidth={Math.max(0.15, px)} strokeLinejoin="round" />
+          </g>
+        )}
         {/* Geometry */}
-        {view.mode === "design" ? (
+        {isPreview ? null : view.mode === "design" ? (
           <g>
             {d.elementPaths.map((ep) => (
               <path
@@ -391,9 +399,9 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
           </g>
         )}
 
-        {view.showBridges && d.bridgePath && <path d={d.bridgePath} fill="#f6b26b" fillOpacity={0.8} stroke="#e08a2e" strokeWidth={px} pointerEvents="none" />}
+        {view.showBridges && !isPreview && d.bridgePath && <path d={d.bridgePath} fill="#f6b26b" fillOpacity={0.8} stroke="#e08a2e" strokeWidth={px} pointerEvents="none" />}
 
-        {view.showIssues && (
+        {view.showIssues && !isPreview && (
           <g pointerEvents="none">
             {warnIssues.map((i) => (
               <path key={i.id} d={i.d} fillRule="evenodd" fill="#f4c542" fillOpacity={i.id === focusedIssue ? 0.75 : 0.4} stroke="#d99a1e" strokeWidth={(i.id === focusedIssue ? 2 : 1) * px} />
@@ -405,7 +413,7 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
         )}
 
         {/* Handles of the selected element (copy 0). */}
-        {handles && (
+        {handles && !isPreview && (
           <g>
             <line x1={handles.origin.x} y1={handles.origin.y} x2={handles.axisTip.x} y2={handles.axisTip.y} stroke="#2f7bb5" strokeWidth={px} pointerEvents="none" />
             {handles.points.length > 0 && (
@@ -445,7 +453,9 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
         </button>
       </div>
       <div className="absolute left-8 top-8 rounded bg-paper/85 px-2 py-1 text-[11px] text-ink-2 shadow-sm">
-        {view.diff !== "off" && reference
+        {isPreview
+          ? `加工プレビュー: 書き出される SVG と同じカットライン（赤・${d.exportSubpaths} パス）。ブリッジは線の切れ目として含まれています`
+          : view.diff !== "off" && reference
           ? view.diff === "reference"
             ? "Difference View: 参照画像のみ"
             : view.diff === "generated"
