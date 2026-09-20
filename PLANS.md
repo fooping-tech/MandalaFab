@@ -30,3 +30,33 @@
 - ブラウザ確認: Playwright（headless Chromium）で初期画面（Flower）、デザイン表示、プリセットダイアログ、Sacred Geometry のブリッジ表示、リング選択時のインスペクタをスクリーンショットで確認。コンソールエラーなし。
 - 未検証: 実機でのレーザー加工。手動ブリッジ配置 UI は未実装（データ構造のみ）。モバイル表示は対象外。
 - 公開: GitHub Pages を `build_type=workflow` で有効化し、`main` へ push。Actions 実行 https://github.com/fooping-tech/MandalaFab/actions/runs/35502150047 が成功し、https://fooping-tech.github.io/MandalaFab/ が HTTP 200 を返すことを確認した。
+
+## Sector モデルへの再設計と参考画像級の曼荼羅（2026-09-20）
+
+### 要求
+
+- 参考画像（市販のレース調ステンシル 36 種と高密度の花柄ステンシル）程度の複雑さ・密度・有機的曲線を生成できるように geometry engine を再設計する。
+- 基本単位を Ring から Sector Motif に変更。`MandalaProject { symmetry, canvas, sectors/rings, centerMotif }`、`SectorElement` = Bezier / Teardrop / Leaf / Petal / Spiral / SCurve / Arc / Dot / Circle / Connector、各要素に position / rotation / scaleX / scaleY / mirror / width / control points / boolean mode / radial orientation。
+- Cubic Bézier を第一級に。Teardrop / Leaf / S-Curve / Curl / Paisley を Bézier で新規実装（指定パラメータ付き）。
+- Compound Motif、入れ子の Radial Repeat、Sector の mirrorLocal、Layered Rings（Ring → CompoundMotif → Sector Elements）、Center Motif ジェネレータ（radial petals / sunflower / starburst / circular petals）。
+- プリセット Floral Lace / Paisley Mandala / Lotus Lace / Ornamental Arabesque / Dense Floral Stencil（単純な circle/petal だけのプリセットは禁止、最低でも Bezier・Teardrop・Leaf・S-Curve・Curl/Paisley を組み合わせる）。
+- complexity ではなく density (0..1) パラメータ。Material View / Cutout View。
+- 受け入れ基準: Dense Floral Stencil を選ぶだけで参考画像程度の complexity / density / organic curvature / radial symmetry / ornamental feeling があり、SVG に 100 個程度以上の shape/path が含まれ、Stencil Validation を pass する。
+
+### 実装
+
+- モデル v2（`src/model/project.ts`, `validate.ts`）: Ring = セクタ、SectorElement 14 種、CompoundMotif、CenterMotif、GeneratorParams { symmetry, density, seed }。v1 JSON は `normalizeProject` が自動移行。
+- `geometry/bezier.ts`、`geometry/elements/builders.ts`（有機モチーフ）、`geometry/elements/sector.ts`（要素変換、局所リピート、ミラー、cut/keep、compound、inset/stem）、`geometry/center.ts`。
+- `generate/generator.ts` を density ベースの 7 テンプレート（teardropCluster, paisleyPair, curlPair, lotusBordered, scurveLattice, fanLeaves, petalRow）+ 区切り帯に置き換え。
+- プリセット 5 種を JSON で新規作成（旧 8 種は削除。旧形式のファイルは移行で読める）。
+- UI: ツリー（中心・リング・要素）、要素インスペクタ（種類別パラメータ、Bezier 制御点表、局所リピート、複合モチーフ化）、キャンバスの材料／抜き／デザイン 3 ビュー、セクタ扇形とミラー軸のガイド、選択要素の位置ハンドルと Bezier 制御点ハンドル（最初のコピー）をドラッグ編集、Web Worker による段階計算。
+- 修正: Clipper アダプタが `RegionNode.children` を投入していなかったため、大きな環の穴の内側にある中心部がブリッジ適用で消えていた。面積 0.05 mm² 未満の hole を無視（渦巻き帯の自己接触ノイズ）。
+- 検証: 頂点を 0.1 mm で間引いてからモルフォロジー検査（Dense Floral: 2.9 s → 0.63 s）。くびれ／壁の判定閾値を面積 ≥ 0.8·w²・長さ ≥ 2w に引き上げ、穴側は消える形状のみ警告。
+
+### 結果
+
+- テスト: `npm test` 8 ファイル 63 件成功（radial, transform, motifs, bezier, sector, stencil, svg, generator/presets/migration）。受け入れテスト `Dense Floral Stencil is ornate …` が type 5 種の使用、565 パス（≥ 100）、島 0、エラー 0 を確認。
+- ビルド: `npm run build` 成功（メイン 450 kB / gzip 136 kB、Worker 133 kB）。
+- ブラウザ確認（Playwright, headless Chromium）: Dense Floral Stencil の材料ビュー／抜きビュー、リング選択時のセクタガイド、Bezier 要素の追加とハンドル表示・ドラッグ、コンソールエラーなし。フッター表示: パス 565、ブリッジ 0、警告 1（細い材料のくびれ）、ジオメトリ 54 ms + 検証 634 ms。
+- ギャラリー（`GALLERY=1 npx vitest run scripts`）で 5 プリセットと density 0.4 / 0.9 の生成結果を目視確認。
+- 未検証: 実機加工。手動ブリッジ UI、要素の回転・スケールのハンドル操作は未実装。警告「細い材料のくびれ」は角の先端を含む場合がある（判定は面積・長さの閾値による）。

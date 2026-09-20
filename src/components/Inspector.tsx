@@ -1,26 +1,51 @@
-import { duplicateRing, removeRing, setSymmetry, updateBridges, updateConstraints, updateProject, updateRing, updateRingParam, updateSheet } from "../editor/commands";
-import { useRender } from "../editor/render-context";
+import { useMemo } from "react";
+import { actionAddElement } from "../editor/actions";
+import {
+  addBezierSegment,
+  duplicateElement,
+  duplicateRing,
+  makeCompound,
+  removeBezierSegment,
+  removeElement,
+  removeRing,
+  setBezierPoint,
+  setElementType,
+  setSymmetry,
+  updateBridges,
+  updateCenter,
+  updateConstraints,
+  updateElement,
+  updateElementParam,
+  updateProject,
+  updateRing,
+  updateSheet,
+} from "../editor/commands";
+import { useRenderState } from "../editor/render-context";
 import { useEditor, type EditorStore } from "../editor/store";
-import { getMotif, listMotifs } from "../geometry/motifs";
-import { LIMITS, MATERIAL_PRESETS, SHEET_PRESETS, SYMMETRY_PRESETS, type Ring } from "../model/project";
+import { elementParamSpecs } from "../geometry/elements/builders";
+import { listMotifs } from "../geometry/motifs";
+import { ELEMENT_TYPES, LIMITS, MATERIAL_PRESETS, SHEET_PRESETS, SYMMETRY_PRESETS, type CenterMotif, type ElementType, type Ring, type SectorElement } from "../model/project";
 import { NumberField, Section, SelectField, SmallButton, TextField, Toggle } from "./fields";
+import { AddElementMenu } from "./RingTree";
 
 export function Inspector({ store }: { store: EditorStore }) {
-  const selected = useEditor((s) => s.selectedRingId);
+  const selection = useEditor((s) => s.selection);
   const project = useEditor((s) => s.project);
-  const ring = selected ? project.rings.find((r) => r.id === selected) : undefined;
+  const ring = selection.kind === "ring" || selection.kind === "element" ? project.rings.find((r) => r.id === selection.ringId) : undefined;
+  const element = selection.kind === "element" && ring ? ring.elements.find((e) => e.id === selection.elementId) : undefined;
+  const title = element ? "Element Inspector" : ring ? "Ring Inspector" : selection.kind === "center" ? "Center Inspector" : "Mandala Inspector";
   return (
     <aside className="flex min-h-0 flex-col border-l border-line bg-panel">
       <div className="panel-title">
-        <span>{ring ? "Ring Inspector" : "Mandala Inspector"}</span>
-        {ring && (
-          <button type="button" className="text-[11px] normal-case tracking-normal text-ink-3 hover:text-ink" onClick={() => store.select(null)}>
-            ← 全体
+        <span>{title}</span>
+        {selection.kind !== "project" && (
+          <button type="button" className="text-[11px] normal-case tracking-normal text-ink-3 hover:text-ink" onClick={() => store.select(element && ring ? { kind: "ring", ringId: ring.id } : { kind: "project" })}>
+            ← {element ? "リング" : "全体"}
           </button>
         )}
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
-        {ring ? <RingPanel store={store} ring={ring} symmetry={project.symmetry} /> : <ProjectPanel store={store} />}
+        {element && ring ? <ElementPanel store={store} ring={ring} element={element} /> : ring ? <RingPanel store={store} ring={ring} symmetry={project.symmetry} /> : selection.kind === "center" ? <CenterPanel store={store} center={project.center} /> : <ProjectPanel store={store} />}
         <ChecksPanel store={store} />
       </div>
     </aside>
@@ -29,74 +54,44 @@ export function Inspector({ store }: { store: EditorStore }) {
 
 function RingPanel({ store, ring, symmetry }: { store: EditorStore; ring: Ring; symmetry: number }) {
   const set = (patch: Partial<Ring>): void => store.execute(updateRing(ring.id, patch));
-  const def = getMotif(ring.motif);
-  const lineLike = def.lineLike === true;
+  const sectorAngle = 360 / Math.max(1, ring.repeat);
+  const W = 2 * Math.PI * ring.radius * (sectorAngle / 360);
   return (
     <>
-      <Section title="リング">
+      <Section title="リング（セクタ）">
         <TextField label="名前" value={ring.name} onChange={(name) => set({ name })} />
-        <SelectField
-          label="モチーフ"
-          value={ring.motif}
-          onChange={(motif) => set({ motif, params: {} })}
-          options={listMotifs().map((m) => ({ value: m.id, label: `${m.label}${m.lineLike ? "（線）" : ""}` }))}
-        />
-        {def.description && <p className="-mt-1 text-[10px] text-ink-3">{def.description}</p>}
+        <NumberField label="半径（セクタ原点の距離）" value={ring.radius} onChange={(radius) => set({ radius })} min={LIMITS.radius.min} max={150} step={0.5} unit="mm" />
         <div>
-          <NumberField label="モチーフ数" value={ring.count} onChange={(count) => set({ count: Math.round(count) })} min={LIMITS.count.min} max={64} step={1} />
+          <NumberField label="回転複製数（repeat）" value={ring.repeat} onChange={(v) => set({ repeat: Math.round(v) })} min={1} max={64} step={1} />
           <div className="mt-1 flex flex-wrap gap-1">
-            {[0.5, 1, 2, 3, 4].map((k) => {
+            {[0.5, 1, 2, 3].map((k) => {
               const c = Math.max(1, Math.round(symmetry * k));
               return (
-                <SmallButton key={k} active={ring.count === c} onClick={() => set({ count: c })} title={`対称数 ${symmetry} × ${k}`}>
+                <SmallButton key={k} active={ring.repeat === c} onClick={() => set({ repeat: c })} title={`対称数 ${symmetry} × ${k}`}>
                   {k === 0.5 ? "½" : `×${k}`} = {c}
                 </SmallButton>
               );
             })}
           </div>
+          <p className="mt-1 text-[10px] text-ink-3">
+            セクタ角 {sectorAngle.toFixed(1)}° · この半径での幅 ≈ {W.toFixed(1)} mm（y は ±{(W / 2).toFixed(1)} まで）
+          </p>
         </div>
-        <NumberField label="半径（中心からの距離）" value={ring.radius} onChange={(radius) => set({ radius })} min={LIMITS.radius.min} max={150} step={0.5} unit="mm" />
-        <NumberField label="幅（放射方向の長さ）" value={ring.length} onChange={(length) => set({ length })} min={LIMITS.length.min} max={100} step={0.5} unit="mm" />
-        <NumberField label="サイズ（接線方向）" value={ring.width} onChange={(width) => set({ width })} min={LIMITS.width.min} max={100} step={0.5} unit="mm" />
-        <NumberField label="回転角" value={ring.rotation} onChange={(rotation) => set({ rotation })} min={LIMITS.rotation.min} max={LIMITS.rotation.max} step={1} unit="°" />
-        <NumberField label="オフセット（位相）" value={ring.phase} onChange={(phase) => set({ phase })} min={LIMITS.phase.min} max={LIMITS.phase.max} step={0.5} unit="°" />
+        <NumberField label="位相（オフセット）" value={ring.phase} onChange={(phase) => set({ phase })} min={LIMITS.phase.min} max={LIMITS.phase.max} step={0.5} unit="°" />
         <div className="flex gap-1">
           <SmallButton active={ring.phase === 0} onClick={() => set({ phase: 0 })}>
             0°
           </SmallButton>
-          <SmallButton active={Math.abs(ring.phase - 180 / Math.max(1, ring.count)) < 1e-9} onClick={() => set({ phase: Math.round((180 / Math.max(1, ring.count)) * 1000) / 1000 })} title="隣のリングと半ピッチずらす">
-            半ピッチ
+          <SmallButton active={Math.abs(ring.phase - sectorAngle / 2) < 1e-9} onClick={() => set({ phase: Math.round((sectorAngle / 2) * 1000) / 1000 })} title="隣のリングと半セクタずらす">
+            半セクタ
           </SmallButton>
         </div>
-        <NumberField label={lineLike ? "線幅（帯の幅）" : "線幅（0 = 塗り、>0 = 輪郭線）"} value={ring.strokeWidth} onChange={(strokeWidth) => set({ strokeWidth })} min={0} max={LIMITS.strokeWidth.max} step={0.1} unit="mm" />
-        <NumberField label="間隔（交互の放射オフセット）" value={ring.stagger} onChange={(stagger) => set({ stagger })} min={LIMITS.stagger.min} max={LIMITS.stagger.max} step={0.5} unit="mm" />
-        <SelectField
-          label="向き"
-          value={ring.direction}
-          onChange={(direction) => set({ direction })}
-          options={[
-            { value: "outward", label: "外向き" },
-            { value: "inward", label: "内向き" },
-          ]}
-        />
-        <SelectField
-          label="回転モード"
-          value={ring.rotationMode}
-          onChange={(rotationMode) => set({ rotationMode })}
-          options={[
-            { value: "radial", label: "放射（中心を向く）" },
-            { value: "fixed", label: "固定（同じ向き）" },
-          ]}
-        />
+        <Toggle label="セクタ内ミラー（左右対称）" checked={ring.mirrorLocal} onChange={(mirrorLocal) => set({ mirrorLocal })} title="y ≥ 0 側にデザインした要素をセクタ軸で鏡映して両側に配置" />
         <Toggle label="表示" checked={ring.visible} onChange={(visible) => set({ visible })} />
       </Section>
-      {def.params.length > 0 && (
-        <Section title={`${def.label} のパラメータ`}>
-          {def.params.map((p) => (
-            <NumberField key={p.key} label={p.label} value={ring.params[p.key] ?? p.default} onChange={(v) => store.execute(updateRingParam(ring.id, p.key, v))} min={p.min} max={p.max} step={p.step} />
-          ))}
-        </Section>
-      )}
+      <Section title="要素を追加">
+        <AddElementMenu onPick={(t) => actionAddElement(store, t)} />
+      </Section>
       <Section title="操作">
         <div className="flex gap-2">
           <SmallButton onClick={() => store.execute(duplicateRing(ring.id))}>複製</SmallButton>
@@ -109,11 +104,167 @@ function RingPanel({ store, ring, symmetry }: { store: EditorStore; ring: Ring; 
   );
 }
 
+function ElementPanel({ store, ring, element: el }: { store: EditorStore; ring: Ring; element: SectorElement }) {
+  const set = (patch: Partial<SectorElement>): void => store.execute(updateElement(ring.id, el.id, patch));
+  const specs = elementParamSpecs(el);
+  const typeInfo = ELEMENT_TYPES.find((t) => t.type === el.type);
+  const compounds = useEditor((s) => s.project.compounds);
+  const lineLike = el.type === "scurve" || el.type === "curl" || el.type === "spiral" || el.type === "connector" || (el.type === "bezier" && !el.closed);
+  return (
+    <>
+      <Section title="要素">
+        <TextField label="名前" value={el.name ?? ""} onChange={(name) => set({ name })} />
+        <SelectField label="種類" value={el.type} onChange={(t) => store.execute(setElementType(ring.id, el.id, t as ElementType))} options={ELEMENT_TYPES.map((t) => ({ value: t.type, label: t.label }))} />
+        {typeInfo && <p className="-mt-1 text-[10px] text-ink-3">{typeInfo.description}</p>}
+        {el.type === "shape" && <SelectField label="形" value={el.motif} onChange={(motif) => set({ motif } as Partial<SectorElement>)} options={listMotifs().map((m) => ({ value: m.id, label: m.label }))} />}
+        {el.type === "compound" && (
+          <SelectField label="複合モチーフ" value={el.ref} onChange={(ref) => set({ ref } as Partial<SectorElement>)} options={[{ value: "", label: "（未選択）" }, ...compounds.map((c) => ({ value: c.id, label: c.name }))]} />
+        )}
+        <SelectField
+          label="ブーリアン"
+          value={el.mode}
+          onChange={(mode) => set({ mode })}
+          options={[
+            { value: "cut", label: "cut（切り抜く）" },
+            { value: "keep", label: "keep（材料を残す）" },
+          ]}
+        />
+        <Toggle label="表示" checked={el.visible} onChange={(visible) => set({ visible })} />
+      </Section>
+      <Section title="配置（セクタ座標）">
+        <div className="grid grid-cols-2 gap-2">
+          <NumberField label="x（外向き）" value={el.x} onChange={(x) => set({ x })} min={-60} max={60} step={0.5} unit="mm" />
+          <NumberField label="y（接線方向）" value={el.y} onChange={(y) => set({ y })} min={-60} max={60} step={0.5} unit="mm" />
+        </div>
+        <NumberField label="回転" value={el.rotation} onChange={(rotation) => set({ rotation })} min={-180} max={180} step={1} unit="°" />
+        <SelectField
+          label="向き"
+          value={el.orient}
+          onChange={(orient) => set({ orient })}
+          options={[
+            { value: "sector", label: "セクタ基準（配置のまま）" },
+            { value: "radial", label: "放射（中心から外を向く）" },
+          ]}
+        />
+        <div className="grid grid-cols-2 gap-2">
+          <NumberField label="scaleX" value={el.scaleX} onChange={(scaleX) => set({ scaleX })} min={0.1} max={4} step={0.05} />
+          <NumberField label="scaleY" value={el.scaleY} onChange={(scaleY) => set({ scaleY })} min={0.1} max={4} step={0.05} />
+        </div>
+        <Toggle label="ミラー（要素自身を反転）" checked={el.mirror} onChange={(mirror) => set({ mirror })} />
+      </Section>
+      <Section title="形状">
+        {el.type !== "bezier" && el.type !== "connector" && el.type !== "compound" && (
+          <>
+            <NumberField label="長さ（軸方向）" value={el.length} onChange={(length) => set({ length })} min={LIMITS.length.min} max={80} step={0.5} unit="mm" />
+            <NumberField label="幅" value={el.width} onChange={(width) => set({ width })} min={LIMITS.width.min} max={80} step={0.5} unit="mm" />
+          </>
+        )}
+        <NumberField label={lineLike ? "線幅（帯の幅）" : "線幅（0 = 塗り、>0 = 輪郭線）"} value={el.strokeWidth} onChange={(strokeWidth) => set({ strokeWidth })} min={0} max={10} step={0.1} unit="mm" />
+        {specs.map((p) => (
+          <NumberField key={p.key} label={p.label} value={el.params[p.key] ?? p.default} onChange={(v) => store.execute(updateElementParam(ring.id, el.id, p.key, v))} min={p.min} max={p.max} step={p.step} />
+        ))}
+        {!lineLike && el.type !== "compound" && (
+          <>
+            <NumberField label="縁取り（内側に材料を残す幅）" value={el.inset} onChange={(inset) => set({ inset })} min={0} max={8} step={0.1} unit="mm" />
+            {(el.inset > 0 || (el.type === "paisley" && (el.params.innerGap ?? 0) > 0)) && <NumberField label="茎の幅（0 = 自動ブリッジ）" value={el.insetStem} onChange={(insetStem) => set({ insetStem })} min={0} max={8} step={0.1} unit="mm" />}
+          </>
+        )}
+      </Section>
+      {el.type === "bezier" && <BezierPanel store={store} ring={ring} element={el} />}
+      {el.type === "connector" && (
+        <Section title="コネクタ">
+          <div className="grid grid-cols-2 gap-2">
+            <NumberField label="from x" value={el.from.x} onChange={(x) => set({ from: { ...el.from, x } } as Partial<SectorElement>)} min={-60} max={60} step={0.5} slider={false} />
+            <NumberField label="from y" value={el.from.y} onChange={(y) => set({ from: { ...el.from, y } } as Partial<SectorElement>)} min={-60} max={60} step={0.5} slider={false} />
+            <NumberField label="to x" value={el.to.x} onChange={(x) => set({ to: { ...el.to, x } } as Partial<SectorElement>)} min={-60} max={60} step={0.5} slider={false} />
+            <NumberField label="to y" value={el.to.y} onChange={(y) => set({ to: { ...el.to, y } } as Partial<SectorElement>)} min={-60} max={60} step={0.5} slider={false} />
+          </div>
+          <NumberField label="ふくらみ" value={el.bulge} onChange={(bulge) => set({ bulge } as Partial<SectorElement>)} min={-20} max={20} step={0.5} unit="mm" />
+        </Section>
+      )}
+      <Section title="局所リピート（セクタ内）">
+        <NumberField label="コピー数" value={el.repeat} onChange={(v) => set({ repeat: Math.round(v) })} min={1} max={12} step={1} />
+        {el.repeat > 1 && <NumberField label="広がり（0 = セクタ角）" value={el.repeatSpread} onChange={(repeatSpread) => set({ repeatSpread })} min={0} max={180} step={1} unit="°" />}
+      </Section>
+      <Section title="操作">
+        <div className="flex flex-wrap gap-2">
+          <SmallButton onClick={() => store.execute(duplicateElement(ring.id, el.id))}>複製</SmallButton>
+          <SmallButton onClick={() => store.execute(makeCompound(ring.id, [el.id], el.name ?? "compound"))} title="この要素を再利用可能な複合モチーフにする">
+            複合モチーフ化
+          </SmallButton>
+          <SmallButton danger onClick={() => store.execute(removeElement(ring.id, el.id))}>
+            削除
+          </SmallButton>
+        </div>
+      </Section>
+    </>
+  );
+}
+
+function BezierPanel({ store, ring, element: el }: { store: EditorStore; ring: Ring; element: Extract<SectorElement, { type: "bezier" }> }) {
+  const set = (patch: Partial<SectorElement>): void => store.execute(updateElement(ring.id, el.id, patch));
+  return (
+    <Section
+      title="Bezier 制御点"
+      right={
+        <span className="flex gap-1 normal-case">
+          <SmallButton onClick={() => store.execute(addBezierSegment(ring.id, el.id))}>＋ セグメント</SmallButton>
+          <SmallButton onClick={() => store.execute(removeBezierSegment(ring.id, el.id))}>−</SmallButton>
+        </span>
+      }
+    >
+      <Toggle label="閉じたパス（塗り形状）" checked={el.closed} onChange={(closed) => set({ closed } as Partial<SectorElement>)} />
+      <p className="text-[10px] text-ink-3">キャンバス上のハンドルをドラッグしても編集できます（最初のコピー）。</p>
+      <div className="grid grid-cols-[auto_1fr_1fr] gap-x-2 gap-y-1 text-[11px]">
+        {el.points.map((p, i) => {
+          const role = i === 0 ? "start" : (i - 1) % 3 === 0 ? "cp1" : (i - 1) % 3 === 1 ? "cp2" : "end";
+          return (
+            <div key={i} className="contents">
+              <span className="self-center font-mono text-ink-3">
+                {Math.floor((i + 2) / 3)}.{role}
+              </span>
+              <input type="number" step={0.5} className="field-input font-mono" value={p.x} onChange={(e) => store.execute(setBezierPoint(ring.id, el.id, i, { x: Number(e.target.value), y: p.y }))} />
+              <input type="number" step={0.5} className="field-input font-mono" value={p.y} onChange={(e) => store.execute(setBezierPoint(ring.id, el.id, i, { x: p.x, y: Number(e.target.value) }))} />
+            </div>
+          );
+        })}
+      </div>
+    </Section>
+  );
+}
+
+function CenterPanel({ store, center }: { store: EditorStore; center: CenterMotif }) {
+  const set = (patch: Partial<CenterMotif>): void => store.execute(updateCenter(patch));
+  return (
+    <Section title="中心モチーフ">
+      <SelectField
+        label="種類"
+        value={center.type}
+        onChange={(type) => set({ type })}
+        options={[
+          { value: "none", label: "なし" },
+          { value: "radialPetals", label: "Radial petals（放射状の花弁）" },
+          { value: "sunflower", label: "Sunflower（2層 + ドット）" },
+          { value: "starburst", label: "Starburst（光線）" },
+          { value: "circularPetals", label: "Circular petals（丸い花弁）" },
+        ]}
+      />
+      <NumberField label="花弁数" value={center.petals} onChange={(v) => set({ petals: Math.round(v) })} min={3} max={64} step={1} />
+      <NumberField label="内側半径" value={center.innerRadius} onChange={(innerRadius) => set({ innerRadius })} min={0} max={60} step={0.5} unit="mm" />
+      <NumberField label="外側半径" value={center.outerRadius} onChange={(outerRadius) => set({ outerRadius })} min={1} max={100} step={0.5} unit="mm" />
+      <NumberField label="花弁の幅" value={center.petalWidth} onChange={(petalWidth) => set({ petalWidth })} min={0.5} max={30} step={0.1} unit="mm" />
+      <NumberField label="中心の円（半径）" value={center.coreRadius} onChange={(coreRadius) => set({ coreRadius })} min={0} max={40} step={0.5} unit="mm" />
+      <NumberField label="線幅（0 = 塗り）" value={center.strokeWidth} onChange={(strokeWidth) => set({ strokeWidth })} min={0} max={8} step={0.1} unit="mm" />
+      <NumberField label="回転" value={center.rotation} onChange={(rotation) => set({ rotation })} min={-180} max={180} step={1} unit="°" />
+    </Section>
+  );
+}
+
 function ProjectPanel({ store }: { store: EditorStore }) {
   const project = useEditor((s) => s.project);
   const { sheet, constraints, bridges } = project;
   const sheetPreset = SHEET_PRESETS.find((p) => p.width === sheet.width && p.height === sheet.height);
-  const materialMatch = MATERIAL_PRESETS.find((m) => JSON.stringify(m.constraints) === JSON.stringify(constraints));
+  const materialMatch = useMemo(() => MATERIAL_PRESETS.find((m) => JSON.stringify(m.constraints) === JSON.stringify(constraints)), [constraints]);
   return (
     <>
       <Section title="プロジェクト">
@@ -130,11 +281,12 @@ function ProjectPanel({ store }: { store: EditorStore }) {
           <div className="mt-1.5">
             <NumberField label="任意の対称数" value={project.symmetry} onChange={(v) => store.execute(setSymmetry(Math.round(v), true))} min={LIMITS.symmetry.min} max={LIMITS.symmetry.max} step={1} slider={false} />
           </div>
-          <p className="mt-1 text-[10px] text-ink-3">対称数を変えると、その倍数だったリングのモチーフ数も連動します。</p>
+          <p className="mt-1 text-[10px] text-ink-3">対称数を変えると、その倍数だった repeat（リング・中心の花弁数）も連動します。</p>
         </div>
         {project.seed !== undefined && (
           <div className="text-[11px] text-ink-3">
             seed: <span className="font-mono">{project.seed}</span>
+            {project.generator && <span> · density {project.generator.density}</span>}
           </div>
         )}
       </Section>
@@ -152,11 +304,11 @@ function ProjectPanel({ store }: { store: EditorStore }) {
           <NumberField label="幅" value={sheet.width} onChange={(width) => store.execute(updateSheet({ width }))} min={LIMITS.sheet.min} max={LIMITS.sheet.max} step={1} unit="mm" slider={false} />
           <NumberField label="高さ" value={sheet.height} onChange={(height) => store.execute(updateSheet({ height }))} min={LIMITS.sheet.min} max={LIMITS.sheet.max} step={1} unit="mm" slider={false} />
         </div>
-        <Toggle label="外形も出力する" checked={sheet.outline} onChange={(outline) => store.execute(updateSheet({ outline }))} title="SVGにシートの外形線を含める" />
+        <Toggle label="外形も出力する" checked={sheet.outline} onChange={(outline) => store.execute(updateSheet({ outline }))} />
         {sheet.outline && <NumberField label="角の丸み" value={sheet.cornerRadius} onChange={(cornerRadius) => store.execute(updateSheet({ cornerRadius }))} min={0} max={50} step={0.5} unit="mm" />}
       </Section>
       <Section title="ブリッジ">
-        <Toggle label="自動ブリッジ" checked={bridges.auto} onChange={(auto) => store.execute(updateBridges({ auto }))} title="脱落する島を外側へ自動で接続する" />
+        <Toggle label="自動ブリッジ" checked={bridges.auto} onChange={(auto) => store.execute(updateBridges({ auto }))} />
         <NumberField label="ブリッジ幅" value={bridges.width} onChange={(width) => store.execute(updateBridges({ width }))} min={0.2} max={10} step={0.1} unit="mm" />
         <SelectField
           label="中心の島のブリッジ数"
@@ -173,7 +325,7 @@ function ProjectPanel({ store }: { store: EditorStore }) {
             { value: "1", label: "1本（最短）" },
           ]}
         />
-        <NumberField label="食い込み（オーバーラップ）" value={bridges.overlap} onChange={(overlap) => store.execute(updateBridges({ overlap }))} min={0} max={3} step={0.1} unit="mm" />
+        <NumberField label="食い込み" value={bridges.overlap} onChange={(overlap) => store.execute(updateBridges({ overlap }))} min={0} max={3} step={0.1} unit="mm" />
       </Section>
       <Section title="加工制約">
         <SelectField
@@ -195,30 +347,33 @@ function ProjectPanel({ store }: { store: EditorStore }) {
 }
 
 function ChecksPanel({ store }: { store: EditorStore }) {
-  const render = useRender();
+  const render = useRenderState();
   const focused = useEditor((s) => s.focusedIssueId);
-  const { issues, stats } = render.validation;
-  const notes = render.geometry.rings.flatMap((r) => r.notes);
+  const d = render.data;
+  const v = d.validation;
+  const issues = v?.issues ?? [];
+  const badge = render.validating ? "検証中…" : issues.length === 0 ? "問題なし" : `${issues.length} 件`;
   return (
-    <Section
-      title="加工チェック"
-      right={<span className={`text-[10px] normal-case ${issues.some((i) => i.severity === "error") ? "text-error" : issues.length ? "text-warn" : "text-ok"}`}>{issues.length === 0 ? "問題なし" : `${issues.length} 件`}</span>}
-    >
+    <Section title="加工チェック" right={<span className={`text-[10px] normal-case ${issues.some((i) => i.severity === "error") ? "text-error" : issues.some((i) => i.severity === "warning") ? "text-warn" : "text-ok"}`}>{badge}</span>}>
       <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px] text-ink-2">
-        <span>切り抜き領域</span>
-        <span className="text-right font-mono">{stats.regions}</span>
+        <span>書き出しパス</span>
+        <span className="text-right font-mono">{d.counts.subpaths}</span>
         <span>島（ブリッジ前）</span>
-        <span className="text-right font-mono">{render.stencil.islandsBefore.length}</span>
+        <span className="text-right font-mono">{d.counts.islandsBefore}</span>
         <span>島（残り）</span>
-        <span className={`text-right font-mono ${stats.islands > 0 ? "text-error" : ""}`}>{stats.islands}</span>
+        <span className={`text-right font-mono ${d.counts.islands > 0 ? "text-error" : ""}`}>{d.counts.islands}</span>
         <span>ブリッジ</span>
-        <span className="text-right font-mono">{stats.bridges}</span>
-        <span>カット長</span>
-        <span className="text-right font-mono">{stats.cutLength.toFixed(0)} mm</span>
-        <span>切り抜き面積</span>
-        <span className="text-right font-mono">{stats.apertureArea.toFixed(0)} mm²</span>
+        <span className="text-right font-mono">{d.counts.bridges}</span>
+        {v && (
+          <>
+            <span>カット長</span>
+            <span className="text-right font-mono">{v.stats.cutLength.toFixed(0)} mm</span>
+            <span>切り抜き面積</span>
+            <span className="text-right font-mono">{v.stats.apertureArea.toFixed(0)} mm²</span>
+          </>
+        )}
       </div>
-      {notes.map((n, i) => (
+      {d.notes.map((n, i) => (
         <p key={i} className="text-[10px] text-ink-3">
           {n}
         </p>
@@ -232,7 +387,7 @@ function ChecksPanel({ store }: { store: EditorStore }) {
                 className={`w-full rounded border px-2 py-1 text-left text-[11px] leading-snug ${focused === i.id ? "border-select bg-select-bg" : "border-line-2 bg-paper hover:border-line"}`}
                 onClick={() => {
                   store.focusIssue(focused === i.id ? null : i.id);
-                  if (i.ringIds?.[0]) store.select(i.ringIds[0]);
+                  if (i.ringIds?.[0]) store.select({ kind: "ring", ringId: i.ringIds[0] });
                 }}
               >
                 <span className={`mr-1 ${i.severity === "error" ? "text-error" : i.severity === "warning" ? "text-warn" : "text-ink-3"}`}>{i.severity === "error" ? "✕" : i.severity === "warning" ? "△" : "ⓘ"}</span>

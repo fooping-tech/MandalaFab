@@ -1,46 +1,50 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CanvasApi } from "../app/App";
-import { useRender } from "../editor/render-context";
-import { useEditor, type EditorStore } from "../editor/store";
+import { setBezierPoint, updateElement } from "../editor/commands";
 import { contourToPath } from "../editor/pipeline";
+import { useRenderState } from "../editor/render-context";
+import { useEditor, type EditorStore } from "../editor/store";
+import { applyElementTransform, elementTransform, invertElementTransform } from "../geometry/elements/sector";
+import { instanceTransform } from "../geometry/radial/repeat";
+import { applyTransform, invertTransform, pointAngleDeg } from "../geometry/radial/transform";
 import { sheetContour } from "../geometry/stencil/sheet";
-import { pointAngleDeg } from "../geometry/radial/transform";
+import { CENTER_ID } from "../geometry/radial/mandala";
 import { publishCursor, publishZoom } from "./StatusBar";
 
 interface View {
-  /** Design-space point at the center of the viewport (mm). */
   cx: number;
   cy: number;
-  /** Pixels per mm. */
-  scale: number;
+  scale: number; // px per mm
 }
 
 const RULER = 22;
 const MIN_SCALE = 0.2;
 const MAX_SCALE = 80;
+const PX_PER_MM_100 = 3.7795;
 
-/** Pick a "nice" mm step so ticks are at least `px` pixels apart. */
 function niceStep(scale: number, px: number): number {
   const steps = [0.5, 1, 2, 5, 10, 20, 25, 50, 100, 200, 500];
   for (const s of steps) if (s * scale >= px) return s;
   return 1000;
 }
 
-export function Canvas({ store, onApi, stale }: { store: EditorStore; onApi: (api: CanvasApi) => void; stale: boolean }) {
-  const render = useRender();
+type DragState = { kind: "pan"; x: number; y: number; cx: number; cy: number; moved: boolean } | { kind: "handle"; ringId: string; elementId: string; handle: "origin" | number; moved: boolean };
+
+export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: CanvasApi) => void }) {
+  const render = useRenderState();
   const project = useEditor((s) => s.project);
   const view = useEditor((s) => s.view);
-  const selected = useEditor((s) => s.selectedRingId);
-  const hover = useEditor((s) => s.hoverRingId);
+  const selection = useEditor((s) => s.selection);
+  const hoverEl = useEditor((s) => s.hoverElementId);
+  const hoverRing = useEditor((s) => s.hoverRingId);
   const focusedIssue = useEditor((s) => s.focusedIssueId);
   const wrapRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
   const [v, setV] = useState<View>({ cx: 0, cy: 0, scale: 3 });
-  const drag = useRef<{ x: number; y: number; cx: number; cy: number; moved: boolean } | null>(null);
+  const drag = useRef<DragState | null>(null);
   const pinch = useRef<Map<number, { x: number; y: number }>>(new Map());
   const pinchStart = useRef<{ dist: number; scale: number } | null>(null);
 
-  // Track viewport size.
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
@@ -57,25 +61,26 @@ export function Canvas({ store, onApi, stale }: { store: EditorStore; onApi: (ap
     setV({ cx: 0, cy: 0, scale });
   }, [size, project.sheet.width, project.sheet.height]);
 
-  const zoomAt = useCallback((factor: number, px?: number, py?: number) => {
-    setV((old) => {
-      const scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, old.scale * factor));
-      if (px === undefined || py === undefined) return { ...old, scale };
-      // Keep the design point under the cursor fixed.
-      const vw = size.w - RULER;
-      const vh = size.h - RULER;
-      const dx = px - RULER - vw / 2;
-      const dy = py - RULER - vh / 2;
-      const wx = old.cx + dx / old.scale;
-      const wy = old.cy + dy / old.scale;
-      return { cx: wx - dx / scale, cy: wy - dy / scale, scale };
-    });
-  }, [size]);
+  const zoomAt = useCallback(
+    (factor: number, px?: number, py?: number) => {
+      setV((old) => {
+        const scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, old.scale * factor));
+        if (px === undefined || py === undefined) return { ...old, scale };
+        const vw = size.w - RULER;
+        const vh = size.h - RULER;
+        const dx = px - RULER - vw / 2;
+        const dy = py - RULER - vh / 2;
+        const wx = old.cx + dx / old.scale;
+        const wy = old.cy + dy / old.scale;
+        return { cx: wx - dx / scale, cy: wy - dy / scale, scale };
+      });
+    },
+    [size],
+  );
 
   useEffect(() => onApi({ fit, zoomBy: (f) => zoomAt(f) }), [fit, zoomAt, onApi]);
-  useEffect(() => publishZoom(v.scale / 3.7795), [v.scale]); // 100% = 1 mm on screen at 96 dpi
+  useEffect(() => publishZoom(v.scale / PX_PER_MM_100), [v.scale]);
 
-  // Fit once on first layout and when the sheet size changes.
   const fitted = useRef<string | null>(null);
   useEffect(() => {
     const key = `${project.sheet.width}x${project.sheet.height}`;
@@ -85,7 +90,6 @@ export function Canvas({ store, onApi, stale }: { store: EditorStore; onApi: (ap
     }
   }, [size, fit, project.sheet.width, project.sheet.height]);
 
-  // Wheel: pan; ctrl/⌘ + wheel (incl. trackpad pinch): zoom.
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
@@ -112,6 +116,15 @@ export function Canvas({ store, onApi, stale }: { store: EditorStore; onApi: (ap
     return { x: v.cx + (clientX - rect.left - RULER - vw / 2) / v.scale, y: v.cy + (clientY - rect.top - RULER - vh / 2) / v.scale };
   };
 
+  // ---- selection geometry for handles (copy 0 of the selected element) ----
+  const selRing = selection.kind === "ring" || selection.kind === "element" ? project.rings.find((r) => r.id === selection.ringId) : undefined;
+  const selEl = selection.kind === "element" && selRing ? selRing.elements.find((e) => e.id === selection.elementId) : undefined;
+  const sectorT = useMemo(() => (selRing ? instanceTransform(0, { count: selRing.repeat, radius: selRing.radius, phaseDeg: selRing.phase, rotationDeg: 0, rotationMode: "radial", direction: "outward", stagger: 0 }) : null), [selRing]);
+  const elT = useMemo(() => (selEl && selRing ? elementTransform(selEl, selRing.radius) : null), [selEl, selRing]);
+  const toWorld = (local: { x: number; y: number }): { x: number; y: number } => applyTransform(applyElementTransform(local, elT!), sectorT!);
+  const worldToLocal = (p: { x: number; y: number }): { x: number; y: number } => invertElementTransform(invertTransform(p, sectorT!), elT!);
+  const worldToSector = (p: { x: number; y: number }): { x: number; y: number } => invertTransform(p, sectorT!);
+
   const onPointerDown = (e: React.PointerEvent): void => {
     if (e.button !== 0 && e.button !== 1) return;
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -122,7 +135,13 @@ export function Canvas({ store, onApi, stale }: { store: EditorStore; onApi: (ap
       drag.current = null;
       return;
     }
-    drag.current = { x: e.clientX, y: e.clientY, cx: v.cx, cy: v.cy, moved: false };
+    const target = e.target as Element;
+    const handle = target.getAttribute?.("data-handle");
+    if (handle && selRing && selEl && e.button === 0) {
+      drag.current = { kind: "handle", ringId: selRing.id, elementId: selEl.id, handle: handle === "origin" ? "origin" : Number(handle), moved: false };
+      return;
+    }
+    drag.current = { kind: "pan", x: e.clientX, y: e.clientY, cx: v.cx, cy: v.cy, moved: false };
   };
   const onPointerMove = (e: React.PointerEvent): void => {
     if (pinch.current.has(e.pointerId)) pinch.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -137,6 +156,17 @@ export function Canvas({ store, onApi, stale }: { store: EditorStore; onApi: (ap
     publishCursor({ x: p.x, y: p.y, r: Math.hypot(p.x, p.y), angle: ((pointAngleDeg(p) % 360) + 360) % 360 });
     const d = drag.current;
     if (!d) return;
+    if (d.kind === "handle") {
+      d.moved = true;
+      if (!sectorT || !elT) return;
+      if (d.handle === "origin") {
+        const s = worldToSector(p);
+        store.execute(updateElement(d.ringId, d.elementId, { x: Math.round(s.x * 10) / 10, y: Math.round(s.y * 10) / 10 }, "要素を移動"));
+      } else {
+        store.execute(setBezierPoint(d.ringId, d.elementId, d.handle, worldToLocal(p)));
+      }
+      return;
+    }
     const dx = e.clientX - d.x;
     const dy = e.clientY - d.y;
     if (!d.moved && Math.hypot(dx, dy) < 3) return;
@@ -148,10 +178,14 @@ export function Canvas({ store, onApi, stale }: { store: EditorStore; onApi: (ap
     if (pinch.current.size < 2) pinchStart.current = null;
     const d = drag.current;
     drag.current = null;
-    if (d && !d.moved && e.button === 0) {
+    if (d && d.kind === "pan" && !d.moved && e.button === 0) {
       const target = e.target as Element;
       const ringId = target.getAttribute?.("data-ring");
-      store.select(ringId ?? null);
+      const elementId = target.getAttribute?.("data-element");
+      if (ringId === CENTER_ID) store.select({ kind: "center" });
+      else if (ringId && elementId) store.select({ kind: "element", ringId, elementId });
+      else if (ringId) store.select({ kind: "ring", ringId });
+      else store.select({ kind: "project" });
     }
   };
 
@@ -165,23 +199,49 @@ export function Canvas({ store, onApi, stale }: { store: EditorStore; onApi: (ap
   const top = v.cy - vh / 2 / v.scale;
   const right = v.cx + vw / 2 / v.scale;
   const bottom = v.cy + vh / 2 / v.scale;
-
   const rulerTicks = (from: number, to: number): number[] => {
     const out: number[] = [];
     const start = Math.floor(from / rulerStep) * rulerStep;
     for (let m = start; m <= to; m += rulerStep) out.push(Math.round(m * 1000) / 1000);
     return out;
   };
-
-  const px = 1 / v.scale; // one screen pixel in design units
+  const px = 1 / v.scale;
   const guideR = Math.max(sheetW, sheetH) * 0.75;
-  const selectedRing = selected ? project.rings.find((r) => r.id === selected) : null;
-  const errorIssues = render.issuePaths.filter((i) => i.severity === "error");
-  const warnIssues = render.issuePaths.filter((i) => i.severity !== "error");
+  const d = render.data;
+  const errorIssues = d.issuePaths.filter((i) => i.severity === "error");
+  const warnIssues = d.issuePaths.filter((i) => i.severity !== "error");
+  const selRingId = selRing?.id ?? null;
+  const selElId = selEl?.id ?? null;
+  const isMaterial = view.mode === "material";
+  const bg = isMaterial ? "#5b6470" : "#e9edf1";
+
+  const elementFill = (ep: { ringId: string; elementId: string; mode: "cut" | "keep" }): string => {
+    const selected = ep.elementId === selElId || (selection.kind === "ring" && ep.ringId === selRingId) || (selection.kind === "center" && ep.ringId === CENTER_ID);
+    const hovered = ep.elementId === hoverEl || (hoverEl === null && ep.ringId === hoverRing);
+    if (ep.mode === "keep") return selected ? "#8fc3a5" : hovered ? "#b7dcc5" : "#cfe6d8";
+    return selected ? "#2f7bb5" : hovered ? "#5a86ad" : "#3b4f63";
+  };
+
+  // Sector guide for the selected ring.
+  const sectorGuide = useMemo(() => {
+    if (!selRing || !view.guides || !view.sectorGuide) return null;
+    const half = 180 / Math.max(1, selRing.repeat);
+    const a0 = ((selRing.phase - 90) * Math.PI) / 180;
+    const rOut = Math.max(sheetW, sheetH) * 0.7;
+    const line = (deg: number) => ({ x: Math.cos(a0 + (deg * Math.PI) / 180) * rOut, y: Math.sin(a0 + (deg * Math.PI) / 180) * rOut });
+    return { axis: line(0), edgeA: line(half), edgeB: line(-half), radius: selRing.radius, mirror: selRing.mirrorLocal };
+  }, [selRing, view.guides, view.sectorGuide, sheetW, sheetH]);
+
+  const handles = useMemo(() => {
+    if (!selEl || !sectorT || !elT) return null;
+    const origin = applyTransform({ x: selEl.x, y: selEl.y }, sectorT);
+    const axisTip = applyTransform(applyElementTransform({ x: selEl.length / 2, y: 0 }, elT), sectorT);
+    const points = selEl.type === "bezier" ? selEl.points.map((p) => applyTransform(applyElementTransform(p, elT), sectorT)) : [];
+    return { origin, axisTip, points };
+  }, [selEl, sectorT, elT]);
 
   return (
-    <div ref={wrapRef} className="relative min-h-0 min-w-0 select-none overflow-hidden bg-bg" style={{ touchAction: "none" }}>
-      {/* Rulers */}
+    <div ref={wrapRef} className="relative min-h-0 min-w-0 select-none overflow-hidden" style={{ touchAction: "none", background: bg }}>
       {view.rulers && (
         <>
           <svg className="absolute left-0 top-0" width={size.w} height={RULER} style={{ background: "#f2f4f7", borderBottom: "1px solid #d5dbe2" }}>
@@ -217,7 +277,7 @@ export function Canvas({ store, onApi, stale }: { store: EditorStore; onApi: (ap
       )}
       <svg
         className="absolute"
-        style={{ left: view.rulers ? RULER : 0, top: view.rulers ? RULER : 0, cursor: drag.current?.moved ? "grabbing" : "default" }}
+        style={{ left: view.rulers ? RULER : 0, top: view.rulers ? RULER : 0 }}
         width={vw}
         height={vh}
         viewBox={viewBox}
@@ -235,14 +295,17 @@ export function Canvas({ store, onApi, stale }: { store: EditorStore; onApi: (ap
             <rect width={majorStep} height={majorStep} fill="url(#grid-minor)" />
             <path d={`M ${majorStep} 0 L 0 0 0 ${majorStep}`} fill="none" stroke="#b9c3ce" strokeWidth={px} />
           </pattern>
+          <pattern id="keep-hatch" width={1.2} height={1.2} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <line x1={0} y1={0} x2={0} y2={1.2} stroke="#3f8f6b" strokeWidth={0.3} />
+          </pattern>
           <filter id="sheet-shadow" x="-5%" y="-5%" width="110%" height="110%">
-            <feDropShadow dx={0} dy={2 * px} stdDeviation={6 * px} floodColor="#1f2d3a" floodOpacity={0.18} />
+            <feDropShadow dx={0} dy={2 * px} stdDeviation={6 * px} floodColor="#1f2d3a" floodOpacity={0.25} />
           </filter>
         </defs>
 
         {/* Sheet */}
         <path d={sheetPath} fill="#ffffff" filter="url(#sheet-shadow)" />
-        {view.grid && <path d={sheetPath} fill="url(#grid-major)" />}
+        {view.grid && view.mode !== "material" && <path d={sheetPath} fill="url(#grid-major)" />}
 
         {/* Guides */}
         {view.guides && (
@@ -253,11 +316,12 @@ export function Canvas({ store, onApi, stale }: { store: EditorStore; onApi: (ap
               const a = ((360 / project.symmetry) * i - 90) * (Math.PI / 180);
               return <line key={i} x1={0} y1={0} x2={Math.cos(a) * guideR} y2={Math.sin(a) * guideR} stroke="#c9d5e0" strokeWidth={px} strokeDasharray={`${2 * px} ${4 * px}`} />;
             })}
-            {selectedRing && (
+            {sectorGuide && (
               <>
-                <circle r={selectedRing.radius} fill="none" stroke="#2f7bb5" strokeWidth={px} strokeDasharray={`${4 * px} ${4 * px}`} />
-                {selectedRing.length > 0 && selectedRing.radius - selectedRing.length / 2 > 0 && <circle r={selectedRing.radius - selectedRing.length / 2} fill="none" stroke="#2f7bb5" strokeWidth={px} opacity={0.4} />}
-                {selectedRing.length > 0 && <circle r={selectedRing.radius + selectedRing.length / 2} fill="none" stroke="#2f7bb5" strokeWidth={px} opacity={0.4} />}
+                <path d={`M0 0L${sectorGuide.edgeA.x} ${sectorGuide.edgeA.y}`} stroke="#2f7bb5" strokeWidth={px} strokeDasharray={`${4 * px} ${3 * px}`} />
+                <path d={`M0 0L${sectorGuide.edgeB.x} ${sectorGuide.edgeB.y}`} stroke="#2f7bb5" strokeWidth={px} strokeDasharray={`${4 * px} ${3 * px}`} />
+                <path d={`M0 0L${sectorGuide.axis.x} ${sectorGuide.axis.y}`} stroke={sectorGuide.mirror ? "#c8793f" : "#2f7bb5"} strokeWidth={px} opacity={0.8} />
+                <circle r={sectorGuide.radius} fill="none" stroke="#2f7bb5" strokeWidth={px} strokeDasharray={`${4 * px} ${4 * px}`} opacity={0.7} />
               </>
             )}
           </g>
@@ -266,55 +330,82 @@ export function Canvas({ store, onApi, stale }: { store: EditorStore; onApi: (ap
         {/* Geometry */}
         {view.mode === "design" ? (
           <g>
-            {render.ringPaths.map((rp) => (
+            {d.elementPaths.map((ep) => (
               <path
-                key={rp.ringId}
-                data-ring={rp.ringId}
-                d={rp.d}
+                key={`${ep.ringId}/${ep.elementId}`}
+                data-ring={ep.ringId}
+                data-element={ep.elementId}
+                d={ep.d}
                 fillRule="evenodd"
-                className={`ring-path ${rp.ringId === selected ? "selected" : rp.ringId === hover ? "hover" : ""}`}
-                onPointerEnter={() => store.hover(rp.ringId)}
+                fill={elementFill(ep)}
+                fillOpacity={ep.mode === "keep" ? 0.9 : 0.85}
+                stroke={ep.mode === "keep" ? "#3f8f6b" : "none"}
+                strokeWidth={px}
+                style={{ cursor: "pointer" }}
+                onPointerEnter={() => store.hover(ep.ringId, ep.elementId)}
                 onPointerLeave={() => store.hover(null)}
               />
             ))}
-            {render.islandPath && <path d={render.islandPath} fill="#f7c6c0" fillOpacity={0.6} stroke="#d84435" strokeWidth={px} pointerEvents="none" />}
+            {d.islandPath && <path d={d.islandPath} fill="#f7c6c0" fillOpacity={0.6} stroke="#d84435" strokeWidth={px} pointerEvents="none" />}
           </g>
         ) : (
           <g>
-            <path d={render.finalPath} fillRule="evenodd" fill="#e9edf1" stroke="#d84435" strokeWidth={Math.max(0.15, px)} />
-            {/* Invisible ring hit targets so hover/select still work in stencil view. */}
-            {render.ringPaths.map((rp) => (
-              <path
-                key={rp.ringId}
-                data-ring={rp.ringId}
-                d={rp.d}
-                fillRule="evenodd"
-                fill={rp.ringId === selected ? "#2f7bb5" : rp.ringId === hover ? "#5a86ad" : "transparent"}
-                fillOpacity={0.25}
-                style={{ cursor: "pointer" }}
-                onPointerEnter={() => store.hover(rp.ringId)}
-                onPointerLeave={() => store.hover(null)}
-              />
-            ))}
+            <path d={d.finalPath} fillRule="evenodd" fill={isMaterial ? bg : "#111111"} stroke={isMaterial ? "none" : "#d84435"} strokeWidth={Math.max(0.12, px)} />
+            {d.elementPaths.map((ep) => {
+              const active = ep.elementId === selElId || ep.elementId === hoverEl || (hoverEl === null && ep.ringId === hoverRing) || (selection.kind === "ring" && ep.ringId === selRingId);
+              return (
+                <path
+                  key={`${ep.ringId}/${ep.elementId}`}
+                  data-ring={ep.ringId}
+                  data-element={ep.elementId}
+                  d={ep.d}
+                  fillRule="evenodd"
+                  fill={active ? "#2f7bb5" : "transparent"}
+                  fillOpacity={0.35}
+                  style={{ cursor: "pointer" }}
+                  onPointerEnter={() => store.hover(ep.ringId, ep.elementId)}
+                  onPointerLeave={() => store.hover(null)}
+                />
+              );
+            })}
           </g>
         )}
 
-        {/* Bridges */}
-        {view.showBridges && render.bridgePath && <path d={render.bridgePath} fill="#f6b26b" fillOpacity={0.75} stroke="#e08a2e" strokeWidth={px} pointerEvents="none" />}
+        {view.showBridges && d.bridgePath && <path d={d.bridgePath} fill="#f6b26b" fillOpacity={0.8} stroke="#e08a2e" strokeWidth={px} pointerEvents="none" />}
 
-        {/* Issues */}
         {view.showIssues && (
           <g pointerEvents="none">
             {warnIssues.map((i) => (
-              <path key={i.id} d={i.d} fillRule="evenodd" fill="#f4c542" fillOpacity={i.id === focusedIssue ? 0.7 : 0.35} stroke="#d99a1e" strokeWidth={(i.id === focusedIssue ? 2 : 1) * px} />
+              <path key={i.id} d={i.d} fillRule="evenodd" fill="#f4c542" fillOpacity={i.id === focusedIssue ? 0.75 : 0.4} stroke="#d99a1e" strokeWidth={(i.id === focusedIssue ? 2 : 1) * px} />
             ))}
             {errorIssues.map((i) => (
-              <path key={i.id} d={i.d} fillRule="evenodd" fill="#ff4d4d" fillOpacity={i.id === focusedIssue ? 0.7 : 0.4} stroke="#c62828" strokeWidth={(i.id === focusedIssue ? 2 : 1) * px} />
+              <path key={i.id} d={i.d} fillRule="evenodd" fill="#ff4d4d" fillOpacity={i.id === focusedIssue ? 0.75 : 0.45} stroke="#c62828" strokeWidth={(i.id === focusedIssue ? 2 : 1) * px} />
             ))}
           </g>
         )}
 
-        {/* Center mark */}
+        {/* Handles of the selected element (copy 0). */}
+        {handles && (
+          <g>
+            <line x1={handles.origin.x} y1={handles.origin.y} x2={handles.axisTip.x} y2={handles.axisTip.y} stroke="#2f7bb5" strokeWidth={px} pointerEvents="none" />
+            {handles.points.length > 0 && (
+              <path
+                d={handles.points.map((p, i) => `${i === 0 ? "M" : i % 3 === 1 ? "M" : "L"}${p.x} ${p.y}`).join("")}
+                fill="none"
+                stroke="#1f7ac0"
+                strokeWidth={px}
+                strokeDasharray={`${3 * px} ${3 * px}`}
+                pointerEvents="none"
+              />
+            )}
+            {handles.points.map((p, i) => {
+              const anchor = i % 3 === 0;
+              return <circle key={i} data-handle={i} cx={p.x} cy={p.y} r={(anchor ? 5 : 4) * px} fill={anchor ? "#1f7ac0" : "#ffffff"} stroke="#1f7ac0" strokeWidth={1.2 * px} style={{ cursor: "move" }} aria-label={anchor ? "アンカーポイント" : "制御点"} />;
+            })}
+            <rect data-handle="origin" x={handles.origin.x - 5 * px} y={handles.origin.y - 5 * px} width={10 * px} height={10 * px} fill="#ffffff" stroke="#2f7bb5" strokeWidth={1.2 * px} style={{ cursor: "move" }} aria-label="要素の位置" />
+          </g>
+        )}
+
         <g pointerEvents="none">
           <circle r={3 * px} fill="none" stroke="#c8793f" strokeWidth={px} />
           <line x1={-6 * px} y1={0} x2={6 * px} y2={0} stroke="#c8793f" strokeWidth={px} />
@@ -322,23 +413,22 @@ export function Canvas({ store, onApi, stale }: { store: EditorStore; onApi: (ap
         </g>
       </svg>
 
-      {/* Overlay controls */}
       <div className="absolute bottom-3 right-3 flex items-center gap-1">
         <button type="button" className="canvas-btn" onClick={() => zoomAt(1 / 1.25)} title="縮小">
           −
         </button>
         <button type="button" className="canvas-btn min-w-[52px] font-mono" onClick={fit} title="全体表示 (F)">
-          {Math.round((v.scale / 3.7795) * 100)}%
+          {Math.round((v.scale / PX_PER_MM_100) * 100)}%
         </button>
         <button type="button" className="canvas-btn" onClick={() => zoomAt(1.25)} title="拡大">
           +
         </button>
       </div>
-      <div className="absolute left-8 top-8 rounded bg-paper/80 px-2 py-1 text-[11px] text-ink-2 shadow-sm">
-        {view.mode === "design" ? "デザイン表示: リングごとの形状（赤 = 脱落する島）" : "ステンシル表示: 結合・ブリッジ後の切り抜き（赤線 = カットライン）"}
-        {stale && <span className="ml-2 text-warn">計算中…</span>}
+      <div className="absolute left-8 top-8 rounded bg-paper/85 px-2 py-1 text-[11px] text-ink-2 shadow-sm">
+        {view.mode === "design" ? "デザイン表示: 要素ごとの形状（緑 = keep、赤 = 脱落する島）" : view.mode === "material" ? "材料ビュー: 残る材料が白、抜ける部分は背景色" : "抜きビュー: レーザーで抜ける領域が黒（赤線 = カットライン）"}
+        {render.stale && <span className="ml-2 text-warn">計算中…</span>}
       </div>
-      <div className="absolute bottom-3 left-8 text-[10px] text-ink-3">ドラッグ: パン · ホイール: スクロール · ⌘/Ctrl+ホイール: ズーム · クリック: リング選択</div>
+      <div className={`absolute bottom-3 left-8 text-[10px] ${isMaterial ? "text-white/70" : "text-ink-3"}`}>ドラッグ: パン · ホイール: スクロール · ⌘/Ctrl+ホイール: ズーム · クリック: 要素選択 · ハンドル: 位置／制御点</div>
     </div>
   );
 }

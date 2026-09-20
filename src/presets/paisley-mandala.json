@@ -1,0 +1,161 @@
+{
+  "name": "Paisley Mandala",
+  "symmetry": 10,
+  "sheet": {
+    "width": 150,
+    "height": 150,
+    "outline": false,
+    "cornerRadius": 0
+  },
+  "center": {
+    "type": "circularPetals",
+    "petals": 20,
+    "innerRadius": 3.5,
+    "outerRadius": 15,
+    "petalWidth": 3.2,
+    "coreRadius": 2.2,
+    "strokeWidth": 0,
+    "rotation": 0
+  },
+  "rings": [
+    {
+      "id": "pm-b1",
+      "name": "Small paisleys",
+      "radius": 25,
+      "repeat": 10,
+      "phase": 0,
+      "mirrorLocal": true,
+      "elements": [
+        {
+          "id": "pm-b1-pais",
+          "type": "paisley",
+          "x": 0,
+          "y": 3.2,
+          "rotation": 8,
+          "length": 11,
+          "width": 5,
+          "params": {
+            "curl": 0.9,
+            "tip": 0.8,
+            "innerGap": 0
+          }
+        },
+        {
+          "id": "pm-b1-dot",
+          "type": "dot",
+          "x": -5.5,
+          "y": 0,
+          "length": 2.4,
+          "width": 2.4
+        },
+        {
+          "id": "pm-b1-dot2",
+          "type": "dot",
+          "x": 5.5,
+          "y": 0,
+          "length": 1.8,
+          "width": 1.8
+        }
+      ]
+    },
+    {
+      "id": "pm-b2",
+      "name": "Large paisleys",
+      "radius": 43,
+      "repeat": 10,
+      "phase": 18,
+      "mirrorLocal": true,
+      "elements": [
+        {
+          "id": "pm-b2-pais",
+          "type": "paisley",
+          "x": 0,
+          "y": 6.5,
+          "rotation": 15,
+          "length": 17,
+          "width": 8,
+          "insetStem": 2,
+          "params": {
+            "curl": 0.65,
+            "tip": 0.75,
+            "innerGap": 1.7
+          }
+        },
+        {
+          "id": "pm-b2-leaf",
+          "type": "leaf",
+          "x": 6,
+          "y": 0,
+          "length": 8,
+          "width": 3.6,
+          "params": {
+            "tipSharpness": 0.9,
+            "bend": 0
+          }
+        },
+        {
+          "id": "pm-b2-dot",
+          "type": "dot",
+          "x": -9.5,
+          "y": 4.5,
+          "length": 3,
+          "width": 3
+        }
+      ]
+    },
+    {
+      "id": "pm-b3",
+      "name": "Curl border",
+      "radius": 61,
+      "repeat": 10,
+      "phase": 0,
+      "mirrorLocal": true,
+      "elements": [
+        {
+          "id": "pm-b3-curl",
+          "type": "curl",
+          "x": -1,
+          "y": 7.5,
+          "rotation": 25,
+          "length": 13,
+          "width": 8,
+          "strokeWidth": 1.5,
+          "params": {
+            "turns": 1.5,
+            "taper": 0.7,
+            "direction": 1,
+            "radius": 0
+          }
+        },
+        {
+          "id": "pm-b3-tear",
+          "type": "teardrop",
+          "x": -2,
+          "y": 0,
+          "length": 9,
+          "width": 4.2,
+          "params": {
+            "tipSharpness": 0.8,
+            "curvature": 0
+          }
+        },
+        {
+          "id": "pm-b3-dot",
+          "type": "dot",
+          "x": 7,
+          "y": 0,
+          "length": 2.4,
+          "width": 2.4
+        },
+        {
+          "id": "pm-b3-dot2",
+          "type": "dot",
+          "x": 3,
+          "y": 17,
+          "length": 2,
+          "width": 2
+        }
+      ]
+    }
+  ]
+}

@@ -9,16 +9,14 @@ import { Dialog } from "./Dialog";
 export function GenerateDialog({ store, open, onClose }: { store: EditorStore; open: boolean; onClose: () => void }) {
   const project = useEditor((s) => s.project);
   const [symmetry, setSymmetry] = useState(project.generator?.symmetry ?? project.symmetry);
-  const [complexity, setComplexity] = useState(project.generator?.complexity ?? 3);
-  const [ringCount, setRingCount] = useState(project.generator?.ringCount ?? 5);
-  const [density, setDensity] = useState(project.generator?.density ?? 0.5);
+  const [density, setDensity] = useState(project.generator?.density ?? 0.7);
   const [seed, setSeed] = useState(project.generator?.seed ?? randomSeed());
 
   const run = (s = seed): void => {
-    const params = { symmetry, complexity, ringCount, density, seed: s };
+    const params = { symmetry, density, seed: s };
     const generated = generateProject(params, { sheet: project.sheet, constraints: project.constraints, bridges: project.bridges });
     store.execute(replaceProject(generated, `生成 (seed ${s})`));
-    store.notify(`曼荼羅を生成しました（seed ${s}）。同じseedで同じ結果になります。`, "success");
+    store.notify(`曼荼羅を生成しました（seed ${s}, density ${density}）。同じ設定と seed で同じ結果になります。`, "success");
   };
 
   return (
@@ -34,9 +32,10 @@ export function GenerateDialog({ store, open, onClose }: { store: EditorStore; o
             ))}
           </div>
         </div>
-        <NumberField label="複雑さ（complexity）" value={complexity} onChange={setComplexity} min={1} max={5} step={1} />
-        <NumberField label="リング数" value={ringCount} onChange={(v) => setRingCount(Math.round(v))} min={1} max={12} step={1} />
-        <NumberField label="密度（density）" value={density} onChange={setDensity} min={0} max={1} step={0.05} />
+        <div>
+          <NumberField label="密度（density）" value={density} onChange={setDensity} min={0} max={1} step={0.05} />
+          <p className="mt-1 text-[10px] leading-relaxed text-ink-3">密度が上がるほど、帯の数・セクタ内の要素数・局所リピート・装飾ドット・曲線の細部が増え、余白が減ります。</p>
+        </div>
         <div className="flex items-end gap-2">
           <div className="flex-1">
             <NumberField label="Random seed" value={seed} onChange={(v) => setSeed(Math.max(0, Math.floor(v)))} min={0} max={4294967295} step={1} slider={false} />

@@ -6,3 +6,7 @@ export * from "./radial/transform";
 export * from "./radial/repeat";
 export * from "./radial/mandala";
 export * from "./stencil";
+export * from "./bezier";
+export * from "./elements/builders";
+export * from "./elements/sector";
+export * from "./center";

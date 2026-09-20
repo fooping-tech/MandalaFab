@@ -38,4 +38,6 @@ npm run preview
 - 保存済みプロジェクト JSON の互換性を壊さない。読み込みは必ず `normalizeProject` を通す。
 - プロジェクト・SVG を外部に送信しない（共有 URL はハッシュのみ）。
 - 検証結果を「安全」「保証」と読める文言にしない。
-- 形状処理を変えたらテストを追加し、8 プリセットすべてで島 0・エラー 0 を維持する。
+- 形状処理を変えたらテストを追加し、5 プリセットすべてで島 0・エラー 0、Dense Floral Stencil で 100 パス以上を維持する。
+- Clipper へ領域を渡すときは `RegionNode.children`（穴の中の領域）まで再帰的に投入する（`addRegions`）。省くと中心部が消える。
+- 有機モチーフは Bézier（`geometry/bezier.ts`）で作る。単純な circle/petal の repeat だけのプリセットは作らない。

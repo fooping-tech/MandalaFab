@@ -25,7 +25,7 @@ export interface StencilGeometry {
 }
 
 export function unionApertures(geometry: MandalaGeometry): RegionNode[] {
-  const all: Region[] = [];
+  const all: Region[] = [...geometry.center];
   for (const ring of geometry.rings) all.push(...ring.apertures);
   return union(all);
 }

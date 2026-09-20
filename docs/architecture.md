@@ -7,6 +7,13 @@
 - **DOM は O(リング数)。** 1 リングの全コピーを 1 本の compound path 文字列にまとめて描く。数千〜数万のモチーフでも DOM 要素は増えない。重い計算は `useDeferredValue` で入力操作から切り離している。
 - **島とブリッジは別の概念。** TypeFab と同じく、ブリッジは「穴から差し引く矩形」であり、形状を足すものではない。
 
+## v0.2 の要点
+
+- 基本単位は **Sector**: `Ring { radius, repeat, phase, mirrorLocal, elements[] }`。要素はセクタ座標（+x 外向き、+y 接線）で置かれ、セクタごと回転複製される。
+- **Bézier が第一級**（`geometry/bezier.ts`）。有機モチーフは制御点から生成し、SVG では帯／閉じた輪郭に変換する。
+- **Web Worker**（`editor/render.worker.ts`）で `computeStaged`: ジオメトリ段階を先に返し、検証段階を後から返す。新しいプロジェクトが来たら古い検証はスキップ。
+- Material View / Cutout View は同じ最終形状の塗り分け。
+
 ## ディレクトリ
 
 ```
@@ -17,8 +24,11 @@ src/
   geometry/
     types.ts    Vec2, Contour, Region, RegionNode, TOLERANCE
     vec.ts      ベクトル演算、面積、重心、点内包、レイ交差、ベジェ平坦化、円弧分割
-    boolean/    clipper-lib アダプタ（union / difference / intersection / offset / stroke）
-    motifs/     モチーフレジストリと組み込みモチーフ
+    bezier.ts   CubicSegment、点列変換、flattenPath、closedFromHalf、bendContour
+    boolean/    clipper-lib アダプタ（union / difference / intersection / offset / stroke / cleanRegions）
+    motifs/     単純形レジストリ（heart, star, polygon, crescent, tulip, lotus, scallop …）= `shape` 要素
+    elements/   builders（要素型 → 形状）, sector（セクタ組み立て: 変換・局所リピート・ミラー・cut/keep・compound）
+    center.ts   中心モチーフ
     radial/     transform, repeat（Radial Repeat）, mandala（generateMandala）
     stencil/    sheet, islands（島検出）, bridges（自動ブリッジ）, pipeline（buildStencil）
   validation/   validateStencil
@@ -33,12 +43,14 @@ docs/           このドキュメント
 ## パイプライン API
 
 ```ts
-generateMandala(project): MandalaGeometry        // リングごとの穴（open モチーフは帯に変換済み）
+generateMandala(project): MandalaGeometry        // 中心 + リングごとの穴（要素別の世界座標も保持）
+buildSector(ring, project): SectorResult          // 1 セクタの cut 領域（keep 適用済み）と要素別領域
 buildStencil(project, geometry): StencilGeometry // union → シートで切り取り → 手動+自動ブリッジ
 validateStencil({ geometry, stencil, constraints, sheet }): ValidationResult
 generateBridges(apertures, options): BridgeResult // buildStencil の内部でも使う
 exportSVG(project, stencil.final): { svg, subpaths, dropped }
-computeRender(project): RenderData               // editor 層。上の全部を呼び、path 文字列にする
+computeStaged(project): { stencil, validate() }  // editor 層。ジオメトリ段階と検証段階を分けて path 文字列にする
+computeRender(project): RenderData               // 同期版（テスト・サムネイル）
 ```
 
 ## 状態管理と Undo / Redo

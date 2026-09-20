@@ -2,7 +2,7 @@ import { useSyncExternalStore } from "react";
 import type { Project } from "../model/project";
 import type { Command } from "./commands";
 
-export type ViewMode = "design" | "stencil";
+export type ViewMode = "design" | "material" | "cutout";
 
 export interface ViewState {
   mode: ViewMode;
@@ -11,7 +11,11 @@ export interface ViewState {
   rulers: boolean;
   showIssues: boolean;
   showBridges: boolean;
+  /** Show the sector wedge and mirror axis of the selected ring. */
+  sectorGuide: boolean;
 }
+
+export type Selection = { kind: "project" } | { kind: "center" } | { kind: "ring"; ringId: string } | { kind: "element"; ringId: string; elementId: string };
 
 export interface Message {
   text: string;
@@ -21,12 +25,12 @@ export interface Message {
 
 export interface EditorState {
   project: Project;
-  selectedRingId: string | null;
+  selection: Selection;
+  hoverElementId: string | null;
   hoverRingId: string | null;
   focusedIssueId: string | null;
   view: ViewState;
   message: Message | null;
-  /** Increments on every project change (used for autosave). */
   revision: number;
   canUndo: boolean;
   canRedo: boolean;
@@ -41,8 +45,17 @@ interface HistoryEntry {
 
 const COALESCE_MS = 900;
 const HISTORY_LIMIT = 100;
-
 type Listener = () => void;
+
+function validSelection(sel: Selection, project: Project): Selection {
+  if (sel.kind === "ring" && !project.rings.some((r) => r.id === sel.ringId)) return { kind: "project" };
+  if (sel.kind === "element") {
+    const ring = project.rings.find((r) => r.id === sel.ringId);
+    if (!ring) return { kind: "project" };
+    if (!ring.elements.some((e) => e.id === sel.elementId)) return { kind: "ring", ringId: ring.id };
+  }
+  return sel;
+}
 
 export class EditorStore {
   private state: EditorState;
@@ -53,10 +66,11 @@ export class EditorStore {
   constructor(project: Project) {
     this.state = {
       project,
-      selectedRingId: null,
+      selection: { kind: "project" },
+      hoverElementId: null,
       hoverRingId: null,
       focusedIssueId: null,
-      view: { mode: "stencil", grid: true, guides: true, rulers: true, showIssues: true, showBridges: true },
+      view: { mode: "material", grid: true, guides: true, rulers: true, showIssues: true, showBridges: true, sectorGuide: true },
       message: null,
       revision: 0,
       canUndo: false,
@@ -76,7 +90,10 @@ export class EditorStore {
     for (const l of this.listeners) l();
   }
 
-  /** Apply a command and record it for undo. */
+  private setProject(project: Project): void {
+    this.set({ project, revision: this.state.revision + 1, selection: validSelection(this.state.selection, project) });
+  }
+
   execute(cmd: Command): void {
     const before = this.state.project;
     const after = cmd.apply(before);
@@ -86,20 +103,16 @@ export class EditorStore {
     if (!(cmd.coalesceKey && last && last.coalesceKey === cmd.coalesceKey && now - last.time < COALESCE_MS)) {
       this.history.push({ label: cmd.label, coalesceKey: cmd.coalesceKey, before, time: now });
       if (this.history.length > HISTORY_LIMIT) this.history.shift();
-    } else {
-      last.time = now;
-    }
+    } else last.time = now;
     this.future = [];
-    const selected = this.state.selectedRingId && after.rings.some((r) => r.id === this.state.selectedRingId) ? this.state.selectedRingId : null;
-    this.set({ project: after, revision: this.state.revision + 1, selectedRingId: selected });
+    this.setProject(after);
   }
 
   undo(): void {
     const entry = this.history.pop();
     if (!entry) return;
     this.future.push({ label: entry.label, project: this.state.project });
-    const selected = this.state.selectedRingId && entry.before.rings.some((r) => r.id === this.state.selectedRingId) ? this.state.selectedRingId : null;
-    this.set({ project: entry.before, revision: this.state.revision + 1, selectedRingId: selected });
+    this.setProject(entry.before);
     this.notify(`元に戻す: ${entry.label}`);
   }
 
@@ -107,24 +120,22 @@ export class EditorStore {
     const entry = this.future.pop();
     if (!entry) return;
     this.history.push({ label: entry.label, before: this.state.project, time: 0 });
-    const selected = this.state.selectedRingId && entry.project.rings.some((r) => r.id === this.state.selectedRingId) ? this.state.selectedRingId : null;
-    this.set({ project: entry.project, revision: this.state.revision + 1, selectedRingId: selected });
+    this.setProject(entry.project);
     this.notify(`やり直し: ${entry.label}`);
   }
 
-  /** Replace the project without recording history (initial load). */
   load(project: Project): void {
     this.history = [];
     this.future = [];
-    this.set({ project, revision: this.state.revision + 1, selectedRingId: null, hoverRingId: null, focusedIssueId: null });
+    this.set({ project, revision: this.state.revision + 1, selection: { kind: "project" }, hoverElementId: null, hoverRingId: null, focusedIssueId: null });
   }
 
-  select(id: string | null): void {
-    if (this.state.selectedRingId !== id) this.set({ selectedRingId: id, focusedIssueId: null });
+  select(sel: Selection): void {
+    this.set({ selection: validSelection(sel, this.state.project), focusedIssueId: null });
   }
 
-  hover(id: string | null): void {
-    if (this.state.hoverRingId !== id) this.set({ hoverRingId: id });
+  hover(ringId: string | null, elementId: string | null = null): void {
+    if (this.state.hoverRingId !== ringId || this.state.hoverElementId !== elementId) this.set({ hoverRingId: ringId, hoverElementId: elementId });
   }
 
   focusIssue(id: string | null): void {
@@ -141,19 +152,19 @@ export class EditorStore {
 }
 
 let current: EditorStore | null = null;
-
 export function getStore(): EditorStore {
   if (!current) throw new Error("Editor store not initialised.");
   return current;
 }
-
 export function initStore(project: Project): EditorStore {
   current = new EditorStore(project);
   return current;
 }
-
-/** Subscribe to a slice of editor state. Selectors must return stable references or primitives. */
 export function useEditor<T>(selector: (s: EditorState) => T): T {
   const store = getStore();
   return useSyncExternalStore(store.subscribe, () => selector(store.getState()), () => selector(store.getState()));
 }
+
+/** Convenience selectors. */
+export const selectedRingId = (s: EditorState): string | null => (s.selection.kind === "ring" || s.selection.kind === "element" ? s.selection.ringId : null);
+export const selectedElementId = (s: EditorState): string | null => (s.selection.kind === "element" ? s.selection.elementId : null);

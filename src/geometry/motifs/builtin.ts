@@ -226,4 +226,212 @@ export const spiral: MotifDefinition = {
   },
 };
 
-export const BUILTIN_MOTIFS: readonly MotifDefinition[] = [circle, dot, petal, leaf, diamond, triangle, arc, teardrop, line, wave, spiral];
+export const BASIC_MOTIFS: readonly MotifDefinition[] = [circle, dot, petal, leaf, diamond, triangle, arc, teardrop, line, wave, spiral];
+
+// ---------------------------------------------------------------------------
+// Ornamental motifs (added for stencil-style designs: layered petals, hearts,
+// scrolls, lace). Same local frame: +x outward, +y tangential, centred.
+// ---------------------------------------------------------------------------
+
+/** Closed contour from a half outline (y >= 0) given as a list of cubic segments, mirrored across the x axis. */
+function mirroredCubics(segments: [Vec2, Vec2, Vec2, Vec2][], tolerance: number): Contour {
+  const upper: Vec2[] = [segments[0]![0]];
+  for (const [p0, p1, p2, p3] of segments) flattenCubic(p0, p1, p2, p3, tolerance, upper);
+  const lower = upper
+    .slice(1, -1)
+    .reverse()
+    .map((p) => ({ x: p.x, y: -p.y }));
+  return [...upper, ...lower];
+}
+
+export const heart: MotifDefinition = {
+  id: "heart",
+  label: "Heart",
+  description: "ハート。先端が外側を向く。",
+  params: [],
+  build: ({ length, width }) => {
+    // Classic parametric heart, rotated so the tip points to +x and the lobes to -x.
+    const n = 72;
+    const pts: Vec2[] = [];
+    for (let i = 0; i < n; i++) {
+      const t = (i / n) * Math.PI * 2;
+      const hx = 16 * Math.sin(t) ** 3;
+      const hy = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
+      pts.push({ x: (-(hy + 6) / 22) * length, y: (hx / 32) * width });
+    }
+    return closed([pts]);
+  },
+};
+
+export const star: MotifDefinition = {
+  id: "star",
+  label: "Star",
+  description: "星形。頂点数と内側半径を指定。",
+  params: [
+    { key: "points", label: "頂点数", min: 3, max: 12, step: 1, default: 5 },
+    { key: "inner", label: "内側半径比", min: 0.1, max: 0.9, step: 0.05, default: 0.45 },
+  ],
+  build: ({ length, width, params }) => {
+    const n = Math.round(params.points ?? 5);
+    const k = params.inner ?? 0.45;
+    const pts: Vec2[] = [];
+    for (let i = 0; i < n * 2; i++) {
+      const a = (i / (n * 2)) * Math.PI * 2;
+      const r = i % 2 === 0 ? 1 : k;
+      pts.push({ x: Math.cos(a) * r * (length / 2), y: Math.sin(a) * r * (width / 2) });
+    }
+    return closed([pts]);
+  },
+};
+
+export const polygon: MotifDefinition = {
+  id: "polygon",
+  label: "Polygon",
+  description: "正多角形（頂点が外側を向く）。",
+  params: [{ key: "sides", label: "辺の数", min: 3, max: 12, step: 1, default: 6 }],
+  build: ({ length, width, params }) => {
+    const n = Math.round(params.sides ?? 6);
+    const pts: Vec2[] = [];
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      pts.push({ x: Math.cos(a) * (length / 2), y: Math.sin(a) * (width / 2) });
+    }
+    return closed([pts]);
+  },
+};
+
+export const crescent: MotifDefinition = {
+  id: "crescent",
+  label: "Crescent",
+  description: "三日月。角が外側を向く。",
+  params: [{ key: "thickness", label: "太さ", min: 0.2, max: 1, step: 0.05, default: 0.6 }],
+  build: ({ length, width, tolerance, params }) => {
+    const R = 1;
+    const r = 0.85;
+    const d = params.thickness ?? 0.6;
+    const x0 = (R * R - r * r + d * d) / (2 * d);
+    const y0 = Math.sqrt(Math.max(0, R * R - x0 * x0));
+    const a0 = Math.atan2(y0, x0);
+    const outer = arcPoints({ x: 0, y: 0 }, R, a0, 2 * Math.PI - 2 * a0, tolerance / 10);
+    const b0 = Math.atan2(-y0, x0 - d);
+    const b1 = Math.atan2(y0, x0 - d);
+    let sweep = b1 - b0;
+    if (sweep < 0) sweep += 2 * Math.PI;
+    const inner = arcPoints({ x: d, y: 0 }, r, b0, sweep, tolerance / 10);
+    const raw = [...outer, ...inner.slice(1, -1)];
+    // Fit the crescent's bounding box to length × width and flip so the horns point outward.
+    let minX = Infinity;
+    let maxX = -Infinity;
+    for (const p of raw) {
+      minX = Math.min(minX, p.x);
+      maxX = Math.max(maxX, p.x);
+    }
+    const sx = length / (maxX - minX);
+    const sy = width / (2 * R);
+    return closed([raw.map((p) => ({ x: (p.x - (minX + maxX) / 2) * sx, y: p.y * sy }))]);
+  },
+};
+
+export const scroll: MotifDefinition = {
+  id: "scroll",
+  label: "Scroll",
+  description: "先端が渦を巻くS字の線（線幅で帯にする）。ミラーと組み合わせると対称な唐草になる。",
+  params: [
+    { key: "turns", label: "巻き数", min: 0.5, max: 2.5, step: 0.25, default: 1.25 },
+    { key: "curl", label: "渦の大きさ", min: 0.2, max: 0.8, step: 0.05, default: 0.45 },
+  ],
+  lineLike: true,
+  build: ({ length, width, params, tolerance }) => {
+    const turns = params.turns ?? 1.25;
+    const rc = Math.min(width / 2, length / 2) * (params.curl ?? 0.45);
+    const c = { x: length / 2 - rc, y: 0 };
+    const start = { x: c.x - rc, y: 0 };
+    const stem: Vec2[] = [{ x: -length / 2, y: -width * 0.35 }];
+    flattenCubic(stem[0]!, { x: -length / 2 + length * 0.45, y: -width * 0.35 }, { x: start.x - length * 0.2, y: width * 0.15 }, start, tolerance, stem);
+    const total = turns * Math.PI * 2;
+    const n = Math.max(24, Math.ceil(total / (2 * Math.acos(1 - Math.min(0.5, tolerance / Math.max(rc, 1e-3))))));
+    for (let i = 1; i <= n; i++) {
+      const t = i / n;
+      const a = Math.PI - t * total;
+      const r = rc * (1 - 0.7 * t);
+      stem.push({ x: c.x + Math.cos(a) * r, y: c.y + Math.sin(a) * r });
+    }
+    return open([stem]);
+  },
+};
+
+export const paisley: MotifDefinition = {
+  id: "paisley",
+  label: "Paisley",
+  description: "曲がった雫（ペイズリー）。",
+  params: [{ key: "bend", label: "曲がり", min: 0, max: 1.5, step: 0.05, default: 0.7 }],
+  build: (ctx) => {
+    const base = teardrop.build(ctx).closed[0]!;
+    const k = ctx.params.bend ?? 0.7;
+    const L = ctx.length;
+    const W = ctx.width;
+    return closed([base.map((p) => ({ x: p.x, y: p.y + k * W * 0.5 * ((p.x + L / 2) / L) ** 2 }))]);
+  },
+};
+
+export const tulip: MotifDefinition = {
+  id: "tulip",
+  label: "Tulip",
+  description: "3つの花弁を持つつぼみ。",
+  params: [],
+  build: ({ length, width, tolerance }) => {
+    const L = length;
+    const W = width;
+    return closed([
+      mirroredCubics(
+        [
+          [{ x: -0.5 * L, y: 0 }, { x: -0.5 * L, y: 0.45 * W }, { x: -0.05 * L, y: 0.5 * W }, { x: 0.2 * L, y: 0.5 * W }],
+          [{ x: 0.2 * L, y: 0.5 * W }, { x: 0.3 * L, y: 0.45 * W }, { x: 0.25 * L, y: 0.25 * W }, { x: 0.22 * L, y: 0.18 * W }],
+          [{ x: 0.22 * L, y: 0.18 * W }, { x: 0.3 * L, y: 0.15 * W }, { x: 0.45 * L, y: 0.08 * W }, { x: 0.5 * L, y: 0 }],
+        ],
+        tolerance,
+      ),
+    ]);
+  },
+};
+
+export const lotus: MotifDefinition = {
+  id: "lotus",
+  label: "Lotus",
+  description: "肩がくびれて先端が尖る蓮弁（オジー形）。",
+  params: [{ key: "waist", label: "くびれ", min: 0, max: 1, step: 0.05, default: 0.5 }],
+  build: ({ length, width, tolerance, params }) => {
+    const L = length;
+    const W = width;
+    const k = params.waist ?? 0.5;
+    return closed([
+      mirroredCubics(
+        [
+          [{ x: -0.5 * L, y: 0 }, { x: -0.5 * L, y: 0.6 * W }, { x: -0.25 * L, y: 0.5 * W }, { x: 0.0 * L, y: 0.5 * W }],
+          [{ x: 0.0 * L, y: 0.5 * W }, { x: 0.2 * L, y: 0.5 * W }, { x: 0.15 * L + 0.2 * L * k, y: 0.25 * W * (1 - k) }, { x: 0.5 * L, y: 0 }],
+        ],
+        tolerance,
+      ),
+    ]);
+  },
+};
+
+export const scallop: MotifDefinition = {
+  id: "scallop",
+  label: "Scallop",
+  description: "半楕円。並べるとスカラップ（波形の縁）になる。",
+  params: [],
+  build: ({ length, width, tolerance }) => {
+    const n = Math.max(8, Math.ceil(arcCount(Math.max(length, width / 2), tolerance) / 2));
+    const pts: Vec2[] = [];
+    for (let i = 0; i <= n; i++) {
+      const a = -Math.PI / 2 + (i / n) * Math.PI;
+      pts.push({ x: -length / 2 + Math.cos(a) * length, y: Math.sin(a) * (width / 2) });
+    }
+    return closed([pts]);
+  },
+};
+
+export const ORNAMENT_MOTIFS: readonly MotifDefinition[] = [heart, star, polygon, crescent, scroll, paisley, tulip, lotus, scallop];
+
+export const BUILTIN_MOTIFS: readonly MotifDefinition[] = [...BASIC_MOTIFS, ...ORNAMENT_MOTIFS];

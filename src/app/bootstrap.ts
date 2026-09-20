@@ -12,7 +12,7 @@ export async function bootstrap(): Promise<EditorStore> {
     fromUrl = project !== null;
   }
   if (!project) project = loadLocal();
-  if (!project) project = loadPreset("flower");
+  if (!project || project.rings.length === 0) project = loadPreset("dense-floral");
   const store = initStore(project);
   if (fromUrl) {
     history.replaceState(null, "", location.pathname + location.search);

@@ -1,39 +1,34 @@
-# MVP Scope
+# Scope
 
-## MVP-1（済）
+## v0.1（済）
 
-1. 曼荼羅表示（リング → Radial Repeat → キャンバス）
-2. リングの追加／削除／複製／並べ替え／表示切替
-3. モチーフ Petal / Circle / Diamond（+ Dot, Leaf, Triangle, Arc, Teardrop, Line, Wave, Spiral）
-4. repeat（モチーフ数）変更、対称数プリセット・任意値
-5. radius 変更（+ 幅・サイズ・線幅・間隔・向き）
-6. rotation 変更（回転角・位相・回転モード）
-7. SVG 書き出し（mm・viewBox・閉じた compound path・重複除去・メタデータ）
+リング = 単純モチーフの Radial Repeat、Stencil Validation、自動ブリッジ、プリセット、seed 生成、SVG/JSON/URL、Undo/Redo、CAD 風 UI。
 
-## MVP-2（済）
+## v0.2（済）: Sector モデルへの再設計
 
-- Stencil Validation（島・細いブリッジ・細い材料・細い形状・小さい穴・自己交差・重複パス・はみ出し）とキャンバスでのハイライト
-- 自動 Bridge Generator（対称性維持、反復解決、設定 UI）
-- プリセット 8 種、Random Generate（seed 再現）、JSON 保存／読込、URL 共有、自動保存、Undo/Redo、加工制約と材料プリセット
+- 基本単位を Ring から **Sector Motif** に変更（Ring = セクタ設計 + repeat）
+- Cubic Bézier を第一級に、Teardrop / Leaf / S-Curve / Curl / Paisley を Bézier で実装
+- 要素の position / rotation / scaleX / scaleY / mirror / strokeWidth / boolean（cut・keep）/ radial orientation
+- Compound Motif、入れ子の Radial Repeat（局所リピート）、セクタ内ミラー
+- Center Motif（radial petals / sunflower / starburst / circular petals）
+- density ベースの生成、プリセット 5 種（Dense Floral Stencil は 565 パス、島 0、エラー 0）
+- Material View / Cutout View
+- Web Worker による段階的計算（ジオメトリ → 検証）
+- v1 プロジェクトの自動移行
 
-## 意図的に MVP に含めないもの
+## 意図的に含めないもの
 
-- 手動ブリッジの配置 UI（データ構造 `manualBridges` と適用は実装済み）
-- DXF / PNG / PDF 書き出し
-- Web Worker での計算（境界は用意済み。現状 150 mm・数千要素で数十〜百数十 ms）
-- モバイル UI（デスクトップ優先）
-- SVG モチーフのインポート（レジストリの `build()` が Contour を返せば追加できる）
-- ベジェ形式での書き出し（現状は折れ線。0.02 mm 許容なので加工上の差はない）
-- カーフ補正、ネスティング、複数ステンシルの配置
+- 手動ブリッジ配置 UI（データ構造と適用は実装済み）
+- DXF / PNG / PDF、SVG モチーフのインポート、カーフ補正、ネスティング
+- 要素同士の吸着・整列などの本格的な 2D CAD 操作
+- モバイル UI
 
-## 将来の拡張の入り口
+## 拡張の入り口
 
 | 拡張 | 触る場所 |
 | --- | --- |
-| 新しいモチーフ | `src/geometry/motifs/builtin.ts` に `MotifDefinition` を追加して `BUILTIN_MOTIFS` に入れる |
-| SVG モチーフ | `MotifDefinition.build` が SVG を折れ線化して返す実装（`path d` パーサが必要） |
-| 材料プリセット | `src/model/project.ts` の `MATERIAL_PRESETS` |
-| 手動ブリッジ UI | Canvas のポインタ操作で `manualBridges` を編集するコマンドを追加 |
-| Worker 化 | `computeRender(project)` を Worker に移し、`RenderData` をそのまま postMessage |
-| DXF | `export/dxf.ts` を追加し `StencilGeometry.final` から LWPOLYLINE を書く |
-| Clipper2 への移行 | `src/geometry/boolean/clipper.ts` のみ差し替え |
+| 新しい要素型 | `model/project.ts` の `ElementType` と `ELEMENT_TYPES`、`elements/builders.ts` の `buildElementShape` / `ELEMENT_PARAMS` |
+| 新しい単純形 | `motifs/builtin.ts`（`shape` 要素から使える） |
+| 生成テンプレート | `generate/generator.ts` の `TEMPLATES` |
+| 中心モチーフ | `geometry/center.ts` |
+| Clipper2 移行 | `geometry/boolean/clipper.ts` |

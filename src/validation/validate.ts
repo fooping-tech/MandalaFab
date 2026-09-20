@@ -4,13 +4,13 @@
  * it only reports what the checks found.
  */
 import type { Constraints } from "../model/project";
-import { difference, flattenRegions, offset, regionArea } from "../geometry/boolean";
+import { cleanRegions, difference, flattenRegions, offset, regionArea } from "../geometry/boolean";
 import type { MandalaGeometry } from "../geometry/radial/mandala";
 import { sheetRegion } from "../geometry/stencil/sheet";
 import type { StencilGeometry } from "../geometry/stencil/pipeline";
 import { contourExtent } from "../geometry/stencil/islands";
 import type { Contour, RegionNode } from "../geometry/types";
-import { area, centroid, containsPoint, perimeter, segmentsIntersect } from "../geometry/vec";
+import { area, bounds, centroid, containsPoint, perimeter, segmentsIntersect } from "../geometry/vec";
 
 export type Severity = "error" | "warning" | "info";
 
@@ -83,6 +83,8 @@ interface ErosionCheck {
   vanished: RegionNode[];
   necks: Contour[];
   split: boolean;
+  /** How many extra pieces / merged holes erosion produced (0 = topology unchanged). */
+  changes: number;
 }
 
 /**
@@ -90,35 +92,44 @@ interface ErosionCheck {
  *  - parts that vanish are thinner than w everywhere
  *  - more regions after erosion means a neck thinner than w
  *  - fewer holes after erosion means a wall thinner than w between two holes
- * Necks/walls are located by opening (erode then dilate) and keeping the
- * difference slivers above a size threshold.
+ * With `locate`, necks/walls are located by opening (erode then dilate) and keeping
+ * the difference slivers that are big and elongated enough to be a real neck
+ * (sharp corners also leave slivers; those are filtered out by size).
  */
-function erosionCheck(regions: readonly RegionNode[], w: number): ErosionCheck {
-  const flat = flattenRegions(regions);
-  if (flat.length === 0 || w <= 0) return { vanished: [], necks: [], split: false };
-  const eroded = offset(flat, -w / 2);
+function erosionCheck(regions: readonly RegionNode[], w: number, locate: boolean): ErosionCheck {
+  if (regions.length === 0 || w <= 0) return { vanished: [], necks: [], split: false, changes: 0 };
+  // Coarsen vertices first: the check tolerates 0.1 mm error and offsetting cost grows with vertex count.
+  const flat = cleanRegions(regions, Math.min(0.1, w / 10)).map((r) => ({ ...r, children: [], childHole: [] }) as RegionNode);
+  if (flat.length === 0) return { vanished: [], necks: [], split: false, changes: 0 };
+  const eroded = offset(flat, -w / 2, "square");
   const erodedFlat = flattenRegions(eroded);
+  const erodedInfo = erodedFlat.map((e) => ({ p: e.outer[0]!, b: bounds([e.outer]) }));
   const vanished: RegionNode[] = [];
   for (const r of flat) {
+    const rb = bounds([r.outer]);
     // Eroded regions are subsets of the originals, so any vertex of an eroded outer inside r.outer means r survived.
-    const survives = erodedFlat.some((e) => {
-      const p = e.outer[0];
-      return p !== undefined && containsPoint(r.outer, p) && !r.holes.some((h) => containsPoint(h, p));
-    });
+    const survives = erodedInfo.some(
+      (e) => e.b.minX >= rb.minX - 1e-6 && e.b.maxX <= rb.maxX + 1e-6 && e.b.minY >= rb.minY - 1e-6 && e.b.maxY <= rb.maxY + 1e-6 && containsPoint(r.outer, e.p) && !r.holes.some((h) => containsPoint(h, e.p)),
+    );
     if (!survives) vanished.push(r);
   }
   const survivors = flat.length - vanished.length;
   const holesBefore = flat.reduce((n, r) => n + r.holes.length, 0);
   const holesAfter = erodedFlat.reduce((n, r) => n + r.holes.length, 0);
-  const split = erodedFlat.length > survivors || holesAfter < holesBefore;
+  const changes = Math.max(0, erodedFlat.length - survivors) + Math.max(0, holesBefore - holesAfter);
+  const split = changes > 0;
   let necks: Contour[] = [];
-  if (split) {
-    const opened = offset(erodedFlat, w / 2);
+  if (split && locate) {
+    const opened = offset(erodedFlat, w / 2, "square");
     const slivers = flattenRegions(difference(flat, flattenRegions(opened)));
-    const threshold = 0.3 * w * w;
-    necks = slivers.filter((s) => area(s.outer) >= threshold && contourExtent(s.outer) >= w * 0.8).map((s) => s.outer);
+    const minArea = 0.8 * w * w;
+    necks = slivers
+      .filter((s) => area(s.outer) >= minArea && contourExtent(s.outer) >= 2 * w)
+      .sort((a, b) => area(b.outer) - area(a.outer))
+      .slice(0, 40)
+      .map((s) => s.outer);
   }
-  return { vanished, necks, split };
+  return { vanished, necks, split, changes };
 }
 
 export interface ValidateInput {
@@ -156,21 +167,21 @@ export function validateStencil(input: ValidateInput): ValidationResult {
   // 3. Thin material (min gap) — sheet minus apertures.
   if (finalFlat.length > 0) {
     const material = difference([sheetRegion(input.sheet)], finalFlat);
-    const mat = erosionCheck(material, constraints.minGap);
-    for (const r of mat.vanished) {
-      if (area(r.outer) < 1e-4) continue;
-      push("thin-material", "warning", `最小間隔 ${fmt(constraints.minGap)} mm より細い材料部分があります（消失する可能性）。`, [r.outer]);
+    const mat = erosionCheck(material, constraints.minGap, true);
+    const vanishedMaterial = mat.vanished.filter((r) => area(r.outer) >= 1e-3);
+    if (vanishedMaterial.length > 0) {
+      push("thin-material", "warning", `最小間隔 ${fmt(constraints.minGap)} mm より細い材料片が ${vanishedMaterial.length} 個あります（切断時に失われる可能性）。`, vanishedMaterial.map((r) => r.outer));
     }
     if (mat.necks.length > 0) {
-      push("thin-material", "warning", `最小間隔 ${fmt(constraints.minGap)} mm より細いブリッジ／くびれがあります（${mat.necks.length} 箇所）。`, mat.necks);
+      push("thin-material", "warning", `最小間隔 ${fmt(constraints.minGap)} mm より細い材料のくびれ／壁があります（${mat.necks.length} 箇所）。`, mat.necks);
+    } else if (mat.split) {
+      push("thin-material", "info", `最小間隔 ${fmt(constraints.minGap)} mm で材料を細らせると分離する箇所があります（${mat.changes} 箇所、角の先端など）。`);
     }
-    // 4. Thin apertures (min feature width).
-    const ap = erosionCheck(finalFlat, constraints.minFeatureWidth);
-    for (const r of ap.vanished) {
-      push("thin-feature", "warning", `最小形状幅 ${fmt(constraints.minFeatureWidth)} mm より細い切り抜き形状があります。`, [r.outer]);
-    }
-    if (ap.necks.length > 0) {
-      push("thin-feature", "warning", `最小形状幅 ${fmt(constraints.minFeatureWidth)} mm より細いくびれが切り抜き形状にあります（${ap.necks.length} 箇所）。`, ap.necks);
+    // 4. Thin apertures (min feature width): only whole features that are too thin are reported;
+    //    tapering tips are normal for cut shapes.
+    const ap = erosionCheck(finalFlat, constraints.minFeatureWidth, false);
+    if (ap.vanished.length > 0) {
+      push("thin-feature", "warning", `最小形状幅 ${fmt(constraints.minFeatureWidth)} mm より細い切り抜き形状が ${ap.vanished.length} 個あります。`, ap.vanished.map((r) => r.outer));
     }
     // 5. Small holes (apertures smaller than the minimum hole diameter).
     const small = finalFlat.filter((r) => contourExtent(r.outer) < constraints.minHoleDiameter);

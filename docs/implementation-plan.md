@@ -2,20 +2,18 @@
 
 | 段階 | 内容 | 状態 |
 | --- | --- | --- |
-| 0 | TypeFab の調査（UI、ジオメトリ、Clipper の使い方、ブリッジ、SVG 出力、テスト） | 済 |
-| 1 | アーキテクチャ・データモデル・ジオメトリモデル・MVP 範囲を docs に整理 | 済 |
-| 2 | 足場: Vite + React + TypeScript + Tailwind + Vitest、GitHub Pages ワークフロー | 済 |
-| 3 | geometry: 型、ベクトル、Clipper アダプタ、モチーフレジストリ + 11 モチーフ、Radial Repeat、generateMandala | 済 |
-| 4 | stencil: シート、union、島検出、自動ブリッジ、pipeline | 済 |
-| 5 | validation / export（SVG, JSON, URL）/ presets / generator | 済 |
-| 6 | editor: store（Undo/Redo）、commands、pipeline、persist、actions | 済 |
-| 7 | UI: Toolbar / RingTree / Canvas（zoom, pan, grid, guides, ruler, hover, select）/ Inspector / StatusBar / dialogs | 済 |
-| 8 | テスト: Radial Repeat、座標変換、SVG 生成、closed path、ブリッジ幅検証、島、対称ブリッジ、生成の決定性、プリセット | 済（41 件） |
-| 9 | ブラウザ確認（Playwright でスクリーンショット）、GitHub Pages 公開 | 済 |
-| 10 | 手動ブリッジ UI、Worker 化、DXF、SVG モチーフ、PNG/PDF | 未着手 |
+| 0–9 | v0.1: TypeFab 調査、設計、単純モチーフの Radial Repeat、検証、ブリッジ、UI、テスト、公開 | 済（2026-09-20） |
+| 10 | v0.2 データモデル: Sector / SectorElement / CompoundMotif / CenterMotif、v1 移行 | 済 |
+| 11 | Bézier 基盤と有機モチーフ（teardrop, leaf, scurve, curl, paisley）、要素ビルダー | 済 |
+| 12 | セクタ組み立て（変換、局所リピート、ミラー、cut/keep、compound）、中心ジェネレータ | 済 |
+| 13 | density 生成、プリセット 5 種、ギャラリー／プロファイル用スクリプト | 済 |
+| 14 | UI: ツリー（中心・リング・要素）、要素インスペクタ、Bezier 制御点編集、Material/Cutout ビュー、Worker | 済 |
+| 15 | 検証高速化（頂点間引き、square join、警告ノイズ削減）、入れ子領域の消失バグ修正 | 済 |
+| 16 | テスト（sector, bezier, center, migration, Dense Floral 受け入れ）、ドキュメント、公開 | 済 |
+| 17 | 手動ブリッジ UI、要素のドラッグ回転／スケール、DXF、SVG モチーフ | 未着手 |
 
 ## 作業ルール
 
-- ジオメトリを変えたらテストを足す。8 つのプリセットすべてで「島 0・エラー 0」が通ることを `tests/generator.test.ts` が確認している。
-- `PLANS.md` に依頼と結果を日付付きで追記する（TypeFab と同じ運用）。
-- 検証していないことを検証済みと書かない。
+- ジオメトリを変えたらテストを足す。5 プリセットで「島 0・エラー 0」、Dense Floral で「100 パス以上」を `tests/generator.test.ts` が確認する。
+- `GALLERY=1 npx vitest run scripts` でギャラリーを出し、目視で確認してから公開する。
+- `PLANS.md` に依頼と結果を日付付きで追記する。検証していないことを検証済みと書かない。

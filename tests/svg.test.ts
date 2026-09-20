@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { emptyProject, defaultRing } from "../src/model/project";
+import { emptyProject, defaultRing, newElement } from "../src/model/project";
 import { generateMandala } from "../src/geometry/radial/mandala";
 import { buildStencil } from "../src/geometry/stencil/pipeline";
 import { exportSVG, formatNumber, projectFromSVG, regionsPathData } from "../src/export/svg";
@@ -9,15 +9,16 @@ import "../src/geometry/motifs";
 function sample() {
   const p = emptyProject("Test Mandala");
   p.sheet = { width: 100, height: 120, outline: true, cornerRadius: 0 };
+  p.center = { type: "radialPetals", petals: 8, innerRadius: 3, outerRadius: 12, petalWidth: 3, coreRadius: 2, strokeWidth: 0, rotation: 0 };
   p.rings = [
-    defaultRing({ id: "a", motif: "petal", count: 8, radius: 30, length: 20, width: 10 }),
-    defaultRing({ id: "b", motif: "circle", count: 1, radius: 0, length: 20, width: 20, strokeWidth: 2 }),
+    defaultRing({ id: "a", radius: 30, repeat: 8, mirrorLocal: true, elements: [newElement("teardrop", { length: 14, width: 6 }), newElement("curl", { y: 5, length: 8, width: 5, strokeWidth: 1.2 })] }),
+    defaultRing({ id: "b", radius: 0, repeat: 1, elements: [newElement("circle", { length: 40, width: 40, strokeWidth: 2 })] }),
   ];
   return p;
 }
 
 describe("SVG export", () => {
-  it("uses mm units and a matching viewBox with no transforms", () => {
+  it("uses mm units and a matching viewBox with no transforms or strokes-as-geometry", () => {
     const p = sample();
     const s = buildStencil(p, generateMandala(p));
     const { svg } = exportSVG(p, s.final);
@@ -26,23 +27,24 @@ describe("SVG export", () => {
     expect(svg).toContain('viewBox="0 0 100 120"');
     expect(svg).not.toContain("transform=");
     expect(svg).not.toContain("<text");
+    expect(svg).not.toContain("<line");
     expect(svg).toContain('id="outline"');
     expect(svg).toContain('id="apertures"');
   });
 
-  it("emits only closed subpaths (M ... Z) with bounded precision", () => {
+  it("emits only closed subpaths (M ... Z) with bounded precision inside the sheet", () => {
     const p = sample();
     const s = buildStencil(p, generateMandala(p));
     const { svg, subpaths } = exportSVG(p, s.final);
     const d = svg.match(/id="apertures" d="([^"]+)"/)![1]!;
     const subs = d.split("M").filter(Boolean);
     expect(subs.length).toBe(subpaths);
+    expect(subpaths).toBeGreaterThan(20); // curls (open Bézier) became closed bands
     for (const sp of subs) expect(sp.endsWith("Z")).toBe(true);
     for (const num of d.match(/-?\d+(\.\d+)?/g)!) {
       const frac = num.split(".")[1];
       if (frac) expect(frac.length).toBeLessThanOrEqual(3);
     }
-    // All points inside the sheet.
     for (const m of d.matchAll(/([ML])(-?[\d.]+) (-?[\d.]+)/g)) {
       const x = Number(m[2]);
       const y = Number(m[3]);
@@ -68,7 +70,8 @@ describe("SVG export", () => {
     const back = normalizeProject(projectFromSVG(svg));
     expect(back.name).toBe("Test Mandala");
     expect(back.rings).toHaveLength(2);
-    expect(back.rings[0]!.motif).toBe("petal");
+    expect(back.rings[0]!.elements[0]!.type).toBe("teardrop");
+    expect(back.center.type).toBe("radialPetals");
   });
 
   it("formats numbers compactly", () => {

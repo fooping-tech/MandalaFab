@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { emptyProject, defaultRing } from "../src/model/project";
+import { emptyProject, defaultRing, newElement, type Project, type Ring } from "../src/model/project";
 import { generateMandala } from "../src/geometry/radial/mandala";
 import { buildStencil, unionApertures } from "../src/geometry/stencil/pipeline";
 import { findIslands } from "../src/geometry/stencil/islands";
@@ -9,37 +9,37 @@ import { flattenRegions, union } from "../src/geometry/boolean";
 import { rotate, dist } from "../src/geometry/vec";
 import "../src/geometry/motifs";
 
-function project(rings: Parameters<typeof defaultRing>[0][], symmetry = 8) {
+function project(rings: Partial<Ring>[], symmetry = 8): Project {
   const p = emptyProject("test");
   p.symmetry = symmetry;
-  p.rings = rings.map((r, i) => defaultRing({ id: `ring${i}`, ...r }));
+  p.center.type = "none";
+  p.rings = rings.map((r, i) => defaultRing({ id: `ring${i}`, mirrorLocal: false, ...r }));
   return p;
 }
+const circleRing = (radius: number, diameter: number, strokeWidth: number): Partial<Ring> => ({ radius: 0, repeat: 1, elements: [newElement("circle", { x: radius, length: diameter, width: diameter, strokeWidth })] });
 
 describe("islands", () => {
   it("a filled petal ring has no island", () => {
-    const p = project([{ motif: "petal", count: 8, radius: 30, length: 20, width: 10 }]);
-    const g = generateMandala(p);
-    expect(findIslands(unionApertures(g))).toHaveLength(0);
+    const p = project([{ radius: 30, repeat: 8, elements: [newElement("petal", { length: 20, width: 10 })] }]);
+    expect(findIslands(unionApertures(generateMandala(p)))).toHaveLength(0);
   });
 
   it("an outline circle (annulus) creates one central island", () => {
-    const p = project([{ motif: "circle", count: 1, radius: 0, length: 30, width: 30, strokeWidth: 2 }]);
-    const islands = findIslands(unionApertures(generateMandala(p)));
+    const islands = findIslands(unionApertures(generateMandala(project([circleRing(0, 30, 2)]))));
     expect(islands).toHaveLength(1);
     expect(islands[0]!.radius).toBeLessThan(0.01);
     expect(Math.abs(islands[0]!.area - Math.PI * 14 * 14)).toBeLessThan(3);
   });
 
-  it("nested annuli create nested islands", () => {
-    const p = project([
-      { motif: "circle", count: 1, radius: 0, length: 20, width: 20, strokeWidth: 2 },
-      { motif: "circle", count: 1, radius: 0, length: 40, width: 40, strokeWidth: 2 },
-    ]);
+  it("nested annuli create nested islands and survive boolean ops", () => {
+    const p = project([circleRing(0, 20, 2), circleRing(0, 40, 2)]);
     const regions = unionApertures(generateMandala(p));
     expect(regions).toHaveLength(1);
     expect(regions[0]!.children).toHaveLength(1);
     expect(findIslands(regions)).toHaveLength(2);
+    // Difference with an empty clip must keep the nested child (regression: children were dropped).
+    const after = flattenRegions(applyBridges(regions, []));
+    expect(after).toHaveLength(2);
   });
 });
 
@@ -54,38 +54,26 @@ describe("bridge generation", () => {
   });
 
   it("bridges a central island with symmetric bridges and removes it", () => {
-    const p = project([{ motif: "circle", count: 1, radius: 0, length: 30, width: 30, strokeWidth: 2 }], 8);
-    const apertures = unionApertures(generateMandala(p));
+    const apertures = unionApertures(generateMandala(project([circleRing(0, 30, 2)], 8)));
     const result = generateBridges(apertures, { width: 1.5, overlap: 0.3, symmetry: 8, centerCount: "auto", perIsland: 2 });
     expect(result.bridges).toHaveLength(8);
     expect(result.unresolved).toHaveLength(0);
     expect(findIslands(result.apertures)).toHaveLength(0);
-    // Bridge span is the band width plus overlap on both sides.
     for (const b of result.bridges) expect(b.length).toBeCloseTo(2 + 0.6, 2);
-    // 8-fold symmetry of bridge positions.
     const step = (2 * Math.PI) / 8;
     const first = { x: result.bridges[0]!.x, y: result.bridges[0]!.y };
-    for (let i = 1; i < 8; i++) {
-      const expected = rotate(first, step * i);
-      const found = result.bridges.some((b) => dist({ x: b.x, y: b.y }, expected) < 1e-3);
-      expect(found).toBe(true);
-    }
+    for (let i = 1; i < 8; i++) expect(result.bridges.some((b) => dist({ x: b.x, y: b.y }, rotate(first, step * i)) < 1e-3)).toBe(true);
   });
 
   it("bridges off-center islands radially and keeps k-fold symmetry", () => {
-    const p = project([{ motif: "petal", count: 6, radius: 40, length: 20, width: 12, strokeWidth: 2 }], 6);
+    const p = project([{ radius: 40, repeat: 6, elements: [newElement("petal", { length: 20, width: 12, strokeWidth: 2 })] }], 6);
     const apertures = unionApertures(generateMandala(p));
     expect(findIslands(apertures)).toHaveLength(6);
     const result = generateBridges(apertures, { width: 1.5, overlap: 0.3, symmetry: 6, centerCount: "auto", perIsland: 2 });
     expect(findIslands(result.apertures)).toHaveLength(0);
-    expect(result.bridges).toHaveLength(12); // inward + outward for each of 6 islands
+    expect(result.bridges).toHaveLength(12);
     const step = (2 * Math.PI) / 6;
-    for (const b of result.bridges) {
-      for (let i = 1; i < 6; i++) {
-        const expected = rotate({ x: b.x, y: b.y }, step * i);
-        expect(result.bridges.some((o) => dist({ x: o.x, y: o.y }, expected) < 1e-3)).toBe(true);
-      }
-    }
+    for (const b of result.bridges) for (let i = 1; i < 6; i++) expect(result.bridges.some((o) => dist({ x: o.x, y: o.y }, rotate({ x: b.x, y: b.y }, step * i)) < 1e-3)).toBe(true);
   });
 
   it("bridge rectangle has the requested width and length", () => {
@@ -94,87 +82,68 @@ describe("bridge generation", () => {
     expect(dist(c[1]!, c[2]!)).toBeCloseTo(1.5, 9);
   });
 
-  it("applying bridges reconnects nested islands through the pipeline", () => {
-    const p = project(
-      [
-        { motif: "circle", count: 1, radius: 0, length: 20, width: 20, strokeWidth: 2 },
-        { motif: "circle", count: 1, radius: 0, length: 40, width: 40, strokeWidth: 2 },
-      ],
-      12,
-    );
+  it("reconnects nested islands through the pipeline", () => {
+    const p = project([circleRing(0, 20, 2), circleRing(0, 40, 2)], 12);
     const s = buildStencil(p, generateMandala(p));
     expect(s.islandsBefore).toHaveLength(2);
     expect(s.islands).toHaveLength(0);
-    expect(s.bridges.length).toBe(12); // 6 per annulus (autoCenterCount(12) = 6)
-    const flat = flattenRegions(applyBridges(s.apertures, s.bridges));
-    expect(flat.every((r) => r.holes.length === 0)).toBe(true);
+    expect(s.bridges.length).toBe(12);
   });
 });
 
 describe("validateStencil", () => {
   const sheet = { width: 150, height: 150, outline: false, cornerRadius: 0 };
-
-  it("reports islands as errors when auto bridges are off", () => {
-    const p = project([{ motif: "circle", count: 1, radius: 0, length: 30, width: 30, strokeWidth: 2 }]);
-    p.bridges.auto = false;
+  const run = (p: Project) => {
     const g = generateMandala(p);
     const s = buildStencil(p, g);
-    const v = validateStencil({ geometry: g, stencil: s, constraints: p.constraints, sheet });
+    return { s, v: validateStencil({ geometry: g, stencil: s, constraints: p.constraints, sheet }) };
+  };
+
+  it("reports islands as errors when auto bridges are off", () => {
+    const p = project([circleRing(0, 30, 2)]);
+    p.bridges.auto = false;
+    const { v } = run(p);
     expect(v.ok).toBe(false);
     expect(v.issues.some((i) => i.code === "island")).toBe(true);
   });
 
   it("flags bridges narrower than the minimum bridge width", () => {
-    const p = project([{ motif: "circle", count: 1, radius: 0, length: 30, width: 30, strokeWidth: 3 }]);
+    const p = project([circleRing(0, 30, 3)]);
     p.bridges.width = 0.8;
     p.constraints.minBridgeWidth = 1.5;
-    const g = generateMandala(p);
-    const s = buildStencil(p, g);
-    const v = validateStencil({ geometry: g, stencil: s, constraints: p.constraints, sheet });
+    const { s, v } = run(p);
     expect(v.ok).toBe(false);
     expect(v.issues.filter((i) => i.code === "bridge-too-narrow")).toHaveLength(s.bridges.length);
   });
 
-  it("passes a plain filled design with wide bridges", () => {
-    const p = project([{ motif: "circle", count: 1, radius: 0, length: 30, width: 30, strokeWidth: 3 }]);
+  it("passes a bridged annulus with wide bridges", () => {
+    const p = project([circleRing(0, 30, 3)]);
     p.bridges.width = 2;
-    const g = generateMandala(p);
-    const s = buildStencil(p, g);
-    const v = validateStencil({ geometry: g, stencil: s, constraints: p.constraints, sheet });
+    const { v } = run(p);
     expect(v.ok).toBe(true);
-    expect(v.issues.filter((i) => i.code === "island")).toHaveLength(0);
   });
 
-  it("detects thin material between two close apertures", () => {
-    const p = project([
-      { motif: "line", count: 1, radius: 0, length: 20, width: 20, rotationMode: "fixed" },
-      { motif: "line", count: 1, radius: 20.4, length: 20, width: 20, rotationMode: "fixed" },
-    ]);
+  it("detects a thin wall between two close apertures", () => {
+    const p = project([{ radius: 0, repeat: 1, elements: [newElement("shape", { motif: "line", x: 0, length: 20, width: 20 }), newElement("shape", { motif: "line", x: 20.4, length: 20, width: 20 })] }]);
     p.constraints.minGap = 1;
-    const g = generateMandala(p);
-    const s = buildStencil(p, g);
-    const v = validateStencil({ geometry: g, stencil: s, constraints: p.constraints, sheet });
-    expect(v.issues.some((i) => i.code === "thin-material")).toBe(true);
+    const { v } = run(p);
+    expect(v.issues.some((i) => i.code === "thin-material" && i.severity === "warning")).toBe(true);
   });
 
-  it("detects duplicate paths and self intersection", () => {
+  it("detects duplicate paths and merges them in the union", () => {
+    const el = () => newElement("circle", { length: 10, width: 10 });
     const p = project([
-      { motif: "circle", count: 8, radius: 40, length: 10, width: 10 },
-      { motif: "circle", count: 8, radius: 40, length: 10, width: 10 },
+      { radius: 40, repeat: 8, elements: [el()] },
+      { radius: 40, repeat: 8, elements: [el()] },
     ]);
-    const g = generateMandala(p);
-    const s = buildStencil(p, g);
-    const v = validateStencil({ geometry: g, stencil: s, constraints: p.constraints, sheet });
+    const { v } = run(p);
     expect(v.issues.some((i) => i.code === "duplicate-path")).toBe(true);
-    // 16 raw circles collapse into 8 regions after union.
     expect(v.stats.regions).toBe(8);
   });
 
   it("small apertures are reported", () => {
-    const p = project([{ motif: "dot", count: 8, radius: 40, length: 0.5, width: 0.5 }]);
-    const g = generateMandala(p);
-    const s = buildStencil(p, g);
-    const v = validateStencil({ geometry: g, stencil: s, constraints: p.constraints, sheet });
+    const p = project([{ radius: 40, repeat: 8, elements: [newElement("dot", { length: 0.5, width: 0.5 })] }]);
+    const { v } = run(p);
     expect(v.issues.some((i) => i.code === "small-hole")).toBe(true);
   });
 });

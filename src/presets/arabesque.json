@@ -1,0 +1,26 @@
+{
+  "name": "Ornamental Arabesque",
+  "symmetry": 8,
+  "sheet": { "width": 150, "height": 150, "outline": false, "cornerRadius": 0 },
+  "center": { "type": "starburst", "petals": 16, "innerRadius": 4, "outerRadius": 14, "petalWidth": 3, "coreRadius": 2.5, "strokeWidth": 0, "rotation": 0 },
+  "rings": [
+    { "id": "ar-b1", "name": "Inner curls", "radius": 26, "repeat": 8, "phase": 0, "mirrorLocal": true, "elements": [
+      { "id": "ar-b1-curl", "type": "curl", "x": -1, "y": 5, "rotation": 20, "length": 12, "width": 7, "strokeWidth": 1.4, "params": { "turns": 1.5, "taper": 0.7, "direction": 1, "radius": 0 } },
+      { "id": "ar-b1-tear", "type": "teardrop", "x": -2, "y": 0, "length": 8, "width": 3.6, "params": { "tipSharpness": 0.75, "curvature": 0 } },
+      { "id": "ar-b1-dot", "type": "dot", "x": 6, "y": 0, "length": 2.2, "width": 2.2 }
+    ] },
+    { "id": "ar-b2", "name": "S-curve lattice", "radius": 43, "repeat": 8, "phase": 22.5, "mirrorLocal": true, "elements": [
+      { "id": "ar-b2-scv", "type": "scurve", "x": 0, "y": 7, "rotation": 10, "length": 16, "width": 8, "strokeWidth": 1.5, "params": { "curvature": 0.65 } },
+      { "id": "ar-b2-leaf", "type": "leaf", "x": 0, "y": 0, "length": 8, "width": 3.4, "params": { "tipSharpness": 0.9, "bend": 0 } },
+      { "id": "ar-b2-dot", "type": "dot", "x": -9, "y": 0, "length": 2.6, "width": 2.6 },
+      { "id": "ar-b2-dot2", "type": "dot", "x": 9, "y": 0, "length": 2.6, "width": 2.6 }
+    ] },
+    { "id": "ar-b3", "name": "Outer arabesque", "radius": 62, "repeat": 8, "phase": 0, "mirrorLocal": true, "elements": [
+      { "id": "ar-b3-curl", "type": "curl", "x": 0, "y": 9, "rotation": 30, "length": 16, "width": 10, "strokeWidth": 1.6, "params": { "turns": 1.75, "taper": 0.7, "direction": 1, "radius": 0 } },
+      { "id": "ar-b3-pais", "type": "paisley", "x": -3, "y": 0, "length": 11, "width": 5, "params": { "curl": 0, "tip": 0.85, "innerGap": 0 } },
+      { "id": "ar-b3-dot", "type": "dot", "x": 6, "y": 0, "length": 2.4, "width": 2.4 },
+      { "id": "ar-b3-dot2", "type": "dot", "x": -9, "y": 12, "length": 2, "width": 2 },
+      { "id": "ar-b3-tip", "type": "teardrop", "x": 9, "y": 18, "rotation": 22, "length": 6, "width": 3, "params": { "tipSharpness": 0.8, "curvature": 0 } }
+    ] }
+  ]
+}

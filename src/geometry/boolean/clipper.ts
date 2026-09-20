@@ -21,6 +21,9 @@ import { signedArea } from "../vec";
 
 export const SCALE = 10000;
 
+/** Holes smaller than this (mm²) are numerical noise, not islands. */
+export const MIN_HOLE_AREA = 0.05;
+
 type IPath = ClipperLib.IntPoint[];
 
 function encode(c: Contour | Polyline): IPath {
@@ -45,10 +48,13 @@ export function orient(c: Contour, outer: boolean): Contour {
   return (a > 0) === outer ? c : [...c].reverse();
 }
 
+/** Add regions (recursing into nested RegionNode children so nothing inside a hole is lost). */
 function addRegions(clipper: ClipperLib.Clipper, regions: readonly Region[], type: ClipperLib.PolyType): void {
   for (const r of regions) {
     if (r.outer.length >= 3) clipper.AddPath(encode(orient(r.outer, true)), type, true);
     for (const h of r.holes) if (h.length >= 3) clipper.AddPath(encode(orient(h, false)), type, true);
+    const children = (r as Partial<RegionNode>).children;
+    if (children && children.length > 0) addRegions(clipper, children, type);
   }
 }
 
@@ -61,10 +67,13 @@ function treeToRegions(tree: ClipperLib.PolyTree): RegionNode[] {
     const holeNodes = node.Childs();
     for (let hi = 0; hi < holeNodes.length; hi++) {
       const holeNode = holeNodes[hi]!;
-      holes.push(decode(holeNode.Contour()));
+      const hole = decode(holeNode.Contour());
+      // Degenerate holes (numerical slivers where a band touches itself) are dropped.
+      if (Math.abs(signedArea(hole)) < MIN_HOLE_AREA && holeNode.Childs().length === 0) continue;
+      holes.push(hole);
       for (const inner of holeNode.Childs()) {
         children.push(walkOuter(inner));
-        childHole.push(hi);
+        childHole.push(holes.length - 1);
       }
     }
     return { outer: decode(node.Contour()), holes, children, childHole };
@@ -124,13 +133,18 @@ const joinOf = (j: JoinStyle): ClipperLib.JoinType =>
   j === "round" ? ClipperLib.JoinType.jtRound : j === "miter" ? ClipperLib.JoinType.jtMiter : ClipperLib.JoinType.jtSquare;
 
 /** Offset (grow for delta > 0, shrink for delta < 0) a set of regions. */
-export function offset(regions: readonly Region[], delta: number, join: JoinStyle = "round"): RegionNode[] {
+export function offset(regions: readonly Region[], delta: number, join: JoinStyle = "round", arcTolerance = TOLERANCE): RegionNode[] {
   if (regions.length === 0) return [];
-  const co = new ClipperLib.ClipperOffset(2, TOLERANCE * SCALE);
-  for (const r of regions) {
-    if (r.outer.length >= 3) co.AddPath(encode(orient(r.outer, true)), joinOf(join), ClipperLib.EndType.etClosedPolygon);
-    for (const h of r.holes) if (h.length >= 3) co.AddPath(encode(orient(h, false)), joinOf(join), ClipperLib.EndType.etClosedPolygon);
-  }
+  const co = new ClipperLib.ClipperOffset(2, arcTolerance * SCALE);
+  const add = (rs: readonly Region[]): void => {
+    for (const r of rs) {
+      if (r.outer.length >= 3) co.AddPath(encode(orient(r.outer, true)), joinOf(join), ClipperLib.EndType.etClosedPolygon);
+      for (const h of r.holes) if (h.length >= 3) co.AddPath(encode(orient(h, false)), joinOf(join), ClipperLib.EndType.etClosedPolygon);
+      const children = (r as Partial<RegionNode>).children;
+      if (children && children.length > 0) add(children);
+    }
+  };
+  add(regions);
   const tree = new ClipperLib.PolyTree();
   co.Execute(tree, delta * SCALE);
   return treeToRegions(tree);
@@ -164,6 +178,22 @@ export function simplify(contour: Contour): Contour[] {
 /** Remove near-duplicate/collinear vertices closer than `distance` mm. */
 export function clean(contour: Contour, distance = 0.001): Contour {
   return decode(ClipperLib.Clipper.CleanPolygon(encode(contour), distance * SCALE));
+}
+
+/** Coarsen every contour of a region set (drops vertices closer than `distance` mm). Holes/children are kept. */
+export function cleanRegions(regions: readonly Region[], distance: number): Region[] {
+  const out: Region[] = [];
+  const walk = (rs: readonly Region[]): void => {
+    for (const r of rs) {
+      const outer = clean(r.outer, distance);
+      if (outer.length < 3) continue;
+      out.push({ outer, holes: r.holes.map((h) => clean(h, distance)).filter((h) => h.length >= 3) });
+      const children = (r as Partial<RegionNode>).children;
+      if (children && children.length > 0) walk(children);
+    }
+  };
+  walk(regions);
+  return out;
 }
 
 /** Total area of a region set in mm². */

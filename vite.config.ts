@@ -10,7 +10,7 @@ export default defineConfig({
   resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
   build: { target: "esnext" },
   test: {
-    include: ["tests/**/*.test.ts"],
+    include: ["tests/**/*.test.ts", "scripts/**/*.test.ts"],
     environment: "node",
   },
 });

@@ -7,9 +7,12 @@ import { exportSVG, projectFromSVG } from "../export/svg";
 import { emptyProject, type Project } from "../model/project";
 import { parseProject, normalizeProject } from "../model/validate";
 import { loadPreset } from "../presets";
-import { addRing, nextRing, removeRing, replaceProject } from "./commands";
+import { addElement, addRing, nextRing, removeElement, removeRing, replaceProject } from "./commands";
+import { newElement, type ElementType } from "../model/project";
 import { pickFile, safeFileName, saveFile } from "./persist";
-import { computeRender, type RenderData } from "./pipeline";
+import type { RenderData } from "./pipeline";
+import { generateMandala } from "../geometry/radial/mandala";
+import { buildStencil } from "../geometry/stencil/pipeline";
 import type { EditorStore } from "./store";
 
 export function actionNew(store: EditorStore): void {
@@ -26,22 +29,38 @@ export function actionLoadPreset(store: EditorStore, id: string): void {
 export function actionAddRing(store: EditorStore): void {
   const ring = nextRing(store.getState().project);
   store.execute(addRing(ring));
-  store.select(ring.id);
+  store.select({ kind: "ring", ringId: ring.id });
+}
+
+/** Add an element to the selected ring (or the last ring). */
+export function actionAddElement(store: EditorStore, type: ElementType): void {
+  const s = store.getState();
+  let ringId = s.selection.kind === "ring" || s.selection.kind === "element" ? s.selection.ringId : s.project.rings[s.project.rings.length - 1]?.id;
+  if (!ringId) {
+    actionAddRing(store);
+    ringId = store.getState().project.rings[store.getState().project.rings.length - 1]!.id;
+  }
+  const el = newElement(type, { name: type, y: type === "curl" || type === "scurve" || type === "paisley" ? 5 : 0 });
+  store.execute(addElement(ringId, el));
+  store.select({ kind: "element", ringId, elementId: el.id });
 }
 
 export function actionDeleteSelected(store: EditorStore): void {
-  const id = store.getState().selectedRingId;
-  if (!id) return;
-  store.execute(removeRing(id));
+  const sel = store.getState().selection;
+  if (sel.kind === "element") store.execute(removeElement(sel.ringId, sel.elementId));
+  else if (sel.kind === "ring") store.execute(removeRing(sel.ringId));
 }
 
 export function actionExportSVG(store: EditorStore, render: RenderData | null): void {
   const { project } = store.getState();
-  const data = render ?? computeRender(project);
-  if (data.stencil.islands.length > 0) {
-    store.notify(`脱落する島が ${data.stencil.islands.length} 個残っています。ブリッジ設定を確認してください（書き出しは続行します）。`, "error");
+  const data = render;
+  void data;
+  const geometry = generateMandala(project);
+  const stencil = buildStencil(project, geometry);
+  if (stencil.islands.length > 0) {
+    store.notify(`脱落する島が ${stencil.islands.length} 個残っています。ブリッジ設定を確認してください（書き出しは続行します）。`, "error");
   }
-  const { svg, subpaths } = exportSVG(project, data.stencil.final);
+  const { svg, subpaths } = exportSVG(project, stencil.final);
   saveFile(`${safeFileName(project.name)}.svg`, svg, "image/svg+xml");
   store.notify(`SVGを書き出しました（${subpaths} パス）。`, "success");
 }

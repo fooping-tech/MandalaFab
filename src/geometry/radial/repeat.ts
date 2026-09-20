@@ -1,4 +1,4 @@
-import type { Contour, Polyline } from "../types";
+import type { Contour, Polyline, Region } from "../types";
 import type { MotifShape } from "../motifs/registry";
 import { applyTransform, transformContour, type Transform } from "./transform";
 
@@ -15,6 +15,8 @@ export interface RadialRepeatOptions {
   direction: "outward" | "inward";
   /** Alternate copies are moved outward by this radial distance (mm). */
   stagger: number;
+  /** Mirror odd copies across their radial axis. */
+  mirror?: boolean;
 }
 
 export interface RadialInstance {
@@ -55,6 +57,37 @@ export function radialRepeat(shape: MotifShape, o: RadialRepeatOptions): RadialI
       closed: shape.closed.map((c) => transformContour(c, t)),
       open: shape.open.map((c) => c.map((p) => applyTransform(p, t))),
     });
+  }
+  return out;
+}
+
+/** Mirror a contour across the x axis (radial axis in motif space), keeping its orientation. */
+export function mirrorContour(c: Contour): Contour {
+  return [...c].reverse().map((p) => ({ x: p.x, y: -p.y }));
+}
+
+export const mirrorRegion = (r: Region): Region => ({ outer: mirrorContour(r.outer), holes: r.holes.map(mirrorContour) });
+
+export interface RegionInstance {
+  index: number;
+  angleDeg: number;
+  transform: Transform;
+  /** Final local regions placed on the ring (world coordinates). */
+  regions: Region[];
+  /** Outer contours of `regions` (for hit-testing, duplicate and self-intersection checks). */
+  closed: Contour[];
+}
+
+/** Replicate already-built local regions around the origin (used by generateRing). */
+export function radialRepeatRegions(local: readonly Region[], o: RadialRepeatOptions): RegionInstance[] {
+  const out: RegionInstance[] = [];
+  const count = Math.max(1, Math.floor(o.count));
+  const mirrored = o.mirror ? local.map(mirrorRegion) : local;
+  for (let i = 0; i < count; i++) {
+    const t = instanceTransform(i, { ...o, count });
+    const src = o.mirror && i % 2 === 1 ? mirrored : local;
+    const regions = src.map((r) => ({ outer: transformContour(r.outer, t), holes: r.holes.map((h) => transformContour(h, t)) }));
+    out.push({ index: i, angleDeg: instanceAngle(i, count, o.phaseDeg), transform: t, regions, closed: regions.map((r) => r.outer) });
   }
   return out;
 }
