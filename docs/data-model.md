@@ -42,7 +42,7 @@
 
 | フィールド | 意味 |
 | --- | --- |
-| `type` | `teardrop` `leaf` `petal` `paisley` `scurve` `curl` `spiral` `arc` `dot` `circle` `bezier` `connector` `shape` `compound` + v0.3: `ccurve` `hook` `vine` `doublecurl` `opposedcurl` `tendril` |
+| `type` | `teardrop` `leaf` `petal` `paisley` `scurve` `curl` `spiral` `arc` `dot` `circle` `bezier` `connector` `shape` `compound` + v0.3: `ccurve` `hook` `vine` `doublecurl` `opposedcurl` `tendril` + 文様: `arch` `fan` `zigzag` |
 | `x`, `y`, `rotation`, `scaleX`, `scaleY`, `mirror` | local position / rotation / scale / mirror |
 | `length`, `width` | 軸方向・横方向の寸法（mm） |
 | `strokeWidth` | 0 = 塗り、>0 = 輪郭帯。線状要素（S-Curve, Curl, Spiral, Connector, 開いた Bezier）では帯の幅 |
@@ -64,6 +64,11 @@
 | paisley | `belly` (0..1), `curlRadius` (mm, 0 = 自動), `curlAmount` (0..1.5 turns), `tipSharpness`, `innerInset` (mm), `innerCurl` (0..1), `direction` (±1) |
 | ccurve / doublecurl | `tip`（端の太さ比）, doublecurl は `turns` |
 | hook / tendril | `tip`, `turns`, `direction` |
+| arch | `pointed` (0..1: 0 で半円、1 で尖頭) |
+| fan | `pointed`, `spokes` (放射線の本数), `spokeWidth`, `eye` (根元に残す円の比), `rim` (縁の帯幅 mm) |
+| zigzag | `waves` (山の数), `tip` (先端の太さ比)。`strokeWidth` が帯幅 |
+| shape motif=`morew` | `turns`, `thorn` (棘の長さ比), `direction`, `gap` (渦の隙間 mm) |
+| shape motif=`urenmorew` | `turns`, `gap` |
 | vine | `tip`, `waves` |
 | opposedcurl | `tip`, `turns` |
 | scurve | `curvature` (0.1..1.2) |

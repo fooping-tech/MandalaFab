@@ -12,7 +12,8 @@ it.skipIf(!process.env.GALLERY)("renders gallery (GALLERY=1 npx vitest run scrip
   (globalThis as any).performance ??= { now: () => Date.now() };
   const items: { label: string; project: Project; big?: boolean }[] = [];
   const mode = process.env.GALLERY;
-  if (mode === "presets") for (const p of PRESETS) items.push({ label: p.label, project: loadPreset(p.id), big: p.id === "dense-floral" });
+  const only = process.env.GALLERY_ONLY?.split(",").filter(Boolean);
+  if (mode === "presets") for (const p of PRESETS) { if (only && only.length > 0 && !only.includes(p.id)) continue; items.push({ label: p.label, project: loadPreset(p.id), big: p.id === "dense-floral" || (only?.length ?? 0) > 0 }); }
   else {
     const base = { sheet: { width: 200, height: 200, outline: false, cornerRadius: 0 } };
     for (const t of TEMPLATE_NAMES) items.push({ label: `template ${t}`, project: composeMandala({ symmetry: 12, density: 0.85, seed: 3, templates: [t] }, base), big: t === TEMPLATE_NAMES[0] });

@@ -32,7 +32,10 @@ export type ElementType =
   | "vine"
   | "doublecurl"
   | "opposedcurl"
-  | "tendril";
+  | "tendril"
+  | "arch"
+  | "fan"
+  | "zigzag";
 
 /** Ornamental role of an element inside a sector composition (for the tree, stats and tests). */
 export type OrnamentRole = "primary" | "secondary" | "flow" | "filler" | "boundary";
@@ -118,11 +121,11 @@ export interface CompoundElement extends ElementBase {
 }
 
 export interface SimpleElement extends ElementBase {
-  type: "teardrop" | "leaf" | "petal" | "spiral" | "scurve" | "curl" | "paisley" | "arc" | "dot" | "circle" | "ccurve" | "hook" | "vine" | "doublecurl" | "opposedcurl" | "tendril";
+  type: "teardrop" | "leaf" | "petal" | "spiral" | "scurve" | "curl" | "paisley" | "arc" | "dot" | "circle" | "ccurve" | "hook" | "vine" | "doublecurl" | "opposedcurl" | "tendril" | "arch" | "fan" | "zigzag";
 }
 
 /** Element types whose closed contours are tapered bands (strokeWidth = base width, not an outline). */
-export const BAND_TYPES: ReadonlySet<ElementType> = new Set<ElementType>(["ccurve", "hook", "vine", "doublecurl", "opposedcurl", "tendril"]);
+export const BAND_TYPES: ReadonlySet<ElementType> = new Set<ElementType>(["ccurve", "hook", "vine", "doublecurl", "opposedcurl", "tendril", "zigzag"]);
 
 export type SectorElement = BezierElement | ConnectorElement | ShapeElement | CompoundElement | SimpleElement;
 
@@ -265,6 +268,9 @@ export const ELEMENT_TYPES: readonly { type: ElementType; label: string; descrip
   { type: "doublecurl", label: "Double Curl", description: "両端が同じ向きに巻く S 字帯。" },
   { type: "opposedcurl", label: "Opposed Curl", description: "1本の茎から逆向きに 2 つ巻く帯。" },
   { type: "tendril", label: "Tendril", description: "細く長く伸びて先端が強く巻く巻きひげ。" },
+  { type: "arch", label: "Arch", description: "丸〜尖りアーチ（窓形）。縁取りで二重アーチに。" },
+  { type: "fan", label: "Fan", description: "アーチを放射状の材料スポークで分けた扇。内側の半円「眼」も置ける。" },
+  { type: "zigzag", label: "Zigzag", description: "ジグザグ帯（三角の連なり）。" },
   { type: "spiral", label: "Spiral", description: "渦巻き線。" },
   { type: "arc", label: "Arc", description: "中心と同心の円弧帯。" },
   { type: "dot", label: "Dot", description: "小さな円。" },
@@ -324,6 +330,12 @@ export function newElement(type: ElementType, partial: Partial<SectorElement> = 
       return { ...base, type, strokeWidth: 1.8, length: 14, width: 8, ...partial } as SimpleElement;
     case "paisley":
       return { ...base, type, length: 14, width: 7, ...partial } as SimpleElement;
+    case "arch":
+      return { ...base, type, length: 12, width: 8, ...partial } as SimpleElement;
+    case "fan":
+      return { ...base, type, length: 10, width: 12, ...partial } as SimpleElement;
+    case "zigzag":
+      return { ...base, type, strokeWidth: 1.5, length: 16, width: 4, ...partial } as SimpleElement;
     case "dot":
       return { ...base, type, length: 2.5, width: 2.5, ...partial } as SimpleElement;
     case "arc":

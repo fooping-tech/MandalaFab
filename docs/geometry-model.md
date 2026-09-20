@@ -66,6 +66,8 @@
 
 - **テーパー帯** `taperedBand(line, widthAt, {bias, roundStart})`: 折れ線の各点で法線方向に幅を取り、根元は丸いキャップ、先端は細く。`bias` で左右非対称。渦で自己交差した帯は `cleanBand()`（Clipper SimplifyPolygon, nonzero）で解消し、囲まれたループは塗りつぶす。
 - **曲線要素**（`BAND_TYPES`）: `ccurve` `hook` `vine` `doublecurl` `opposedcurl` `tendril` は閉じたテーパー帯を返す。`strokeWidth` は根元の幅、`tip` は先端の太さ比。`bezier`（開いたパス）も `params.taper > 0` でテーパー帯になる。
+- **文様要素**: `buildArch(L, W, pointed)` は −x を平らな底、+x をドーム（`pointed` で 3 次曲線の頂点を尖らせる）とする閉曲線。`buildFan` はアーチから根元中心（−L/2, 0）を起点とする放射スポーク矩形と `eye` 円を引き、`rim` があれば内側オフセットで縁帯を残す（複数輪郭）。`buildZigzag(L, W, waves)` は折れ線で、`taperedBand` + `cleanBand` で帯にする。
+- **アイヌ文様**（`src/geometry/motifs/ainu.ts`）: `morew` は茎 + アルキメデス渦の帯。渦のピッチ（`rc·shrink / turns`）から `gap` を引いた値を帯幅の上限にし、隣り合う巻きが融合しないようにする。根元は円で丸め、`thorn` で背に三角の棘を足す。`urenmorew` は 1 本の矩形の茎から ±y へ逆向きに巻く 2 本の渦。
 - **True Paisley** `buildTruePaisley({ length, width, belly, curlRadius, curlAmount, tipSharpness, innerInset, innerCurl, direction })`: 背骨 = 曲がる 3 次曲線 + 半径が縮む渦。直線の雫（`buildTeardrop`）を `sweepAlongSpine` で背骨に沿わせ、巻きの外側を `belly` で太らせる。`innerInset` は既存の縁取り（茎付き）、`innerCurl` は内側の材料に鉤（`buildHook`）を cut する。
 - **入れ子** `SectorElement.children`: 親のローカル座標で組み立て（`elementLocalRegions` を再帰）、`keep` は親の穴から差し引き、`cut` は union で追加。深さ 3 まで。
 - **役割** `SectorElement.role`（primary / secondary / flow / filler / boundary）は情報用で、ツリーのバッジと `compositionStats()` に使う。

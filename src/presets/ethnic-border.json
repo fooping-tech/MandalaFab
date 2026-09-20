@@ -1,0 +1,551 @@
+{
+  "version": 2,
+  "app": "0.2.0",
+  "name": "Ethnic Border",
+  "symmetry": 16,
+  "sheet": {
+    "width": 200,
+    "height": 200,
+    "outline": false,
+    "cornerRadius": 0
+  },
+  "center": {
+    "type": "sunflower",
+    "petals": 16,
+    "innerRadius": 3,
+    "outerRadius": 14,
+    "petalWidth": 3,
+    "coreRadius": 2.5,
+    "strokeWidth": 0,
+    "rotation": 0
+  },
+  "rings": [
+    {
+      "id": "eb-1",
+      "name": "Triangles ×32",
+      "visible": true,
+      "radius": 21,
+      "repeat": 32,
+      "phase": 0,
+      "mirrorLocal": true,
+      "elements": [
+        {
+          "type": "shape",
+          "visible": true,
+          "x": 0,
+          "y": 0,
+          "rotation": 0,
+          "scaleX": 1,
+          "scaleY": 1,
+          "mirror": false,
+          "length": 8,
+          "width": 4.2,
+          "strokeWidth": 0,
+          "mode": "cut",
+          "orient": "sector",
+          "repeat": 1,
+          "repeatSpread": 0,
+          "inset": 0,
+          "insetStem": 0,
+          "params": {},
+          "motif": "triangle",
+          "name": "tooth",
+          "id": "eb-1-0"
+        }
+      ]
+    },
+    {
+      "id": "eb-2",
+      "name": "Bars ×32",
+      "visible": true,
+      "radius": 30,
+      "repeat": 32,
+      "phase": 3.75,
+      "mirrorLocal": true,
+      "elements": [
+        {
+          "type": "shape",
+          "visible": true,
+          "x": 0,
+          "y": 0,
+          "rotation": 0,
+          "scaleX": 1,
+          "scaleY": 1,
+          "mirror": false,
+          "length": 6,
+          "width": 2.6,
+          "strokeWidth": 0,
+          "mode": "cut",
+          "orient": "sector",
+          "repeat": 1,
+          "repeatSpread": 0,
+          "inset": 0,
+          "insetStem": 0,
+          "params": {},
+          "motif": "line",
+          "name": "bar",
+          "id": "eb-2-0"
+        }
+      ]
+    },
+    {
+      "id": "eb-3",
+      "name": "Veined leaves ×16",
+      "visible": true,
+      "radius": 44,
+      "repeat": 16,
+      "phase": 11.25,
+      "mirrorLocal": true,
+      "elements": [
+        {
+          "type": "leaf",
+          "visible": true,
+          "x": 0,
+          "y": 0,
+          "rotation": 0,
+          "scaleX": 1,
+          "scaleY": 1,
+          "mirror": false,
+          "length": 19,
+          "width": 11,
+          "strokeWidth": 0,
+          "mode": "cut",
+          "orient": "sector",
+          "repeat": 1,
+          "repeatSpread": 0,
+          "inset": 1.6,
+          "insetStem": 2,
+          "params": {
+            "tipSharpness": 0.8,
+            "bend": 0
+          },
+          "name": "leaf",
+          "children": [
+            {
+              "type": "connector",
+              "visible": true,
+              "x": 0,
+              "y": 0,
+              "rotation": 0,
+              "scaleX": 1,
+              "scaleY": 1,
+              "mirror": false,
+              "length": 10,
+              "width": 6,
+              "strokeWidth": 1.2,
+              "mode": "keep",
+              "orient": "sector",
+              "repeat": 1,
+              "repeatSpread": 0,
+              "inset": 0,
+              "insetStem": 0,
+              "params": {},
+              "name": "midrib",
+              "from": {
+                "x": -7,
+                "y": 0
+              },
+              "to": {
+                "x": 6.5,
+                "y": 0
+              },
+              "bulge": 0
+            },
+            {
+              "type": "connector",
+              "visible": true,
+              "x": 0,
+              "y": 0,
+              "rotation": 0,
+              "scaleX": 1,
+              "scaleY": 1,
+              "mirror": false,
+              "length": 10,
+              "width": 6,
+              "strokeWidth": 1.1,
+              "mode": "keep",
+              "orient": "sector",
+              "repeat": 1,
+              "repeatSpread": 0,
+              "inset": 0,
+              "insetStem": 0,
+              "params": {},
+              "name": "vein",
+              "from": {
+                "x": -3.5,
+                "y": 0
+              },
+              "to": {
+                "x": 1.5,
+                "y": 3.2
+              },
+              "bulge": 0
+            },
+            {
+              "type": "connector",
+              "visible": true,
+              "x": 0,
+              "y": 0,
+              "rotation": 0,
+              "scaleX": 1,
+              "scaleY": 1,
+              "mirror": false,
+              "length": 10,
+              "width": 6,
+              "strokeWidth": 1.1,
+              "mode": "keep",
+              "orient": "sector",
+              "repeat": 1,
+              "repeatSpread": 0,
+              "inset": 0,
+              "insetStem": 0,
+              "params": {},
+              "name": "vein",
+              "from": {
+                "x": -3.5,
+                "y": 0
+              },
+              "to": {
+                "x": 1.5,
+                "y": -3.2
+              },
+              "bulge": 0
+            },
+            {
+              "type": "connector",
+              "visible": true,
+              "x": 0,
+              "y": 0,
+              "rotation": 0,
+              "scaleX": 1,
+              "scaleY": 1,
+              "mirror": false,
+              "length": 10,
+              "width": 6,
+              "strokeWidth": 1.1,
+              "mode": "keep",
+              "orient": "sector",
+              "repeat": 1,
+              "repeatSpread": 0,
+              "inset": 0,
+              "insetStem": 0,
+              "params": {},
+              "name": "vein",
+              "from": {
+                "x": 0.5,
+                "y": 0
+              },
+              "to": {
+                "x": 4.5,
+                "y": 2
+              },
+              "bulge": 0
+            },
+            {
+              "type": "connector",
+              "visible": true,
+              "x": 0,
+              "y": 0,
+              "rotation": 0,
+              "scaleX": 1,
+              "scaleY": 1,
+              "mirror": false,
+              "length": 10,
+              "width": 6,
+              "strokeWidth": 1.1,
+              "mode": "keep",
+              "orient": "sector",
+              "repeat": 1,
+              "repeatSpread": 0,
+              "inset": 0,
+              "insetStem": 0,
+              "params": {},
+              "name": "vein",
+              "from": {
+                "x": 0.5,
+                "y": 0
+              },
+              "to": {
+                "x": 4.5,
+                "y": -2
+              },
+              "bulge": 0
+            }
+          ],
+          "id": "eb-3-0"
+        },
+        {
+          "type": "dot",
+          "visible": true,
+          "x": -1,
+          "y": 9.5,
+          "rotation": 0,
+          "scaleX": 1,
+          "scaleY": 1,
+          "mirror": false,
+          "length": 2.4,
+          "width": 2.4,
+          "strokeWidth": 0,
+          "mode": "cut",
+          "orient": "sector",
+          "repeat": 1,
+          "repeatSpread": 0,
+          "inset": 0,
+          "insetStem": 0,
+          "params": {},
+          "name": "dot",
+          "id": "eb-3-1"
+        }
+      ]
+    },
+    {
+      "id": "eb-4",
+      "name": "Zigzag ×16",
+      "visible": true,
+      "radius": 58,
+      "repeat": 16,
+      "phase": 0,
+      "mirrorLocal": true,
+      "elements": [
+        {
+          "type": "zigzag",
+          "visible": true,
+          "x": 0,
+          "y": 0,
+          "rotation": 90,
+          "scaleX": 1,
+          "scaleY": 1,
+          "mirror": false,
+          "length": 22,
+          "width": 6,
+          "strokeWidth": 2.8,
+          "mode": "cut",
+          "orient": "sector",
+          "repeat": 1,
+          "repeatSpread": 0,
+          "inset": 0,
+          "insetStem": 0,
+          "params": {
+            "waves": 2,
+            "tip": 1
+          },
+          "name": "zigzag",
+          "id": "eb-4-0"
+        }
+      ]
+    },
+    {
+      "id": "eb-5",
+      "name": "Arches with dots ×24",
+      "visible": true,
+      "radius": 69,
+      "repeat": 24,
+      "phase": 7.5,
+      "mirrorLocal": true,
+      "elements": [
+        {
+          "type": "arch",
+          "visible": true,
+          "x": 0,
+          "y": 0,
+          "rotation": 0,
+          "scaleX": 1,
+          "scaleY": 1,
+          "mirror": false,
+          "length": 9,
+          "width": 10,
+          "strokeWidth": 0,
+          "mode": "cut",
+          "orient": "sector",
+          "repeat": 1,
+          "repeatSpread": 0,
+          "inset": 1.5,
+          "insetStem": 1.8,
+          "params": {
+            "pointed": 0
+          },
+          "name": "arch",
+          "id": "eb-5-0"
+        },
+        {
+          "type": "dot",
+          "visible": true,
+          "x": 6.5,
+          "y": 0,
+          "rotation": 0,
+          "scaleX": 1,
+          "scaleY": 1,
+          "mirror": false,
+          "length": 2.2,
+          "width": 2.2,
+          "strokeWidth": 0,
+          "mode": "cut",
+          "orient": "sector",
+          "repeat": 1,
+          "repeatSpread": 0,
+          "inset": 0,
+          "insetStem": 0,
+          "params": {},
+          "name": "dot",
+          "id": "eb-5-1"
+        }
+      ]
+    },
+    {
+      "id": "eb-6",
+      "name": "Sun flowers ×16",
+      "visible": true,
+      "radius": 83,
+      "repeat": 16,
+      "phase": 0,
+      "mirrorLocal": true,
+      "elements": [
+        {
+          "type": "shape",
+          "visible": true,
+          "x": 0,
+          "y": 0,
+          "rotation": 0,
+          "scaleX": 1,
+          "scaleY": 1,
+          "mirror": false,
+          "length": 14,
+          "width": 14,
+          "strokeWidth": 0,
+          "mode": "cut",
+          "orient": "sector",
+          "repeat": 1,
+          "repeatSpread": 0,
+          "inset": 1.7,
+          "insetStem": 2.2,
+          "params": {
+            "points": 8,
+            "inner": 0.55
+          },
+          "motif": "star",
+          "name": "sun",
+          "children": [
+            {
+              "type": "dot",
+              "visible": true,
+              "x": 0,
+              "y": 0,
+              "rotation": 0,
+              "scaleX": 1,
+              "scaleY": 1,
+              "mirror": false,
+              "length": 3.2,
+              "width": 3.2,
+              "strokeWidth": 0,
+              "mode": "cut",
+              "orient": "sector",
+              "repeat": 1,
+              "repeatSpread": 0,
+              "inset": 0,
+              "insetStem": 0,
+              "params": {},
+              "name": "eye",
+              "id": "eb-6-0-eye"
+            }
+          ],
+          "id": "eb-6-0"
+        },
+        {
+          "type": "dot",
+          "visible": true,
+          "x": 0,
+          "y": 10.5,
+          "rotation": 0,
+          "scaleX": 1,
+          "scaleY": 1,
+          "mirror": false,
+          "length": 2.2,
+          "width": 2.2,
+          "strokeWidth": 0,
+          "mode": "cut",
+          "orient": "sector",
+          "repeat": 1,
+          "repeatSpread": 0,
+          "inset": 0,
+          "insetStem": 0,
+          "params": {},
+          "name": "dot",
+          "id": "eb-6-1"
+        }
+      ]
+    },
+    {
+      "id": "eb-7",
+      "name": "Lattice ×32",
+      "visible": true,
+      "radius": 94,
+      "repeat": 32,
+      "phase": 5.625,
+      "mirrorLocal": true,
+      "elements": [
+        {
+          "type": "zigzag",
+          "visible": true,
+          "x": 0,
+          "y": 0,
+          "rotation": 90,
+          "scaleX": 1,
+          "scaleY": 1,
+          "mirror": false,
+          "length": 9,
+          "width": 7,
+          "strokeWidth": 2.2,
+          "mode": "cut",
+          "orient": "sector",
+          "repeat": 1,
+          "repeatSpread": 0,
+          "inset": 0,
+          "insetStem": 0,
+          "params": {
+            "waves": 1,
+            "tip": 1
+          },
+          "name": "lattice",
+          "id": "eb-7-0"
+        },
+        {
+          "type": "dot",
+          "visible": true,
+          "x": -5,
+          "y": 0,
+          "rotation": 0,
+          "scaleX": 1,
+          "scaleY": 1,
+          "mirror": false,
+          "length": 2,
+          "width": 2,
+          "strokeWidth": 0,
+          "mode": "cut",
+          "orient": "sector",
+          "repeat": 1,
+          "repeatSpread": 0,
+          "inset": 0,
+          "insetStem": 0,
+          "params": {},
+          "name": "dot",
+          "id": "eb-7-1"
+        }
+      ]
+    }
+  ],
+  "compounds": [],
+  "constraints": {
+    "minBridgeWidth": 1.5,
+    "minFeatureWidth": 1.0,
+    "minGap": 1.0,
+    "minHoleDiameter": 1.0
+  },
+  "bridges": {
+    "auto": true,
+    "width": 1.5,
+    "centerCount": "auto",
+    "perIsland": 2,
+    "overlap": 0.3
+  },
+  "manualBridges": []
+}

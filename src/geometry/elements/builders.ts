@@ -4,7 +4,9 @@
  * centred at the origin). Organic motifs are built from cubic Béziers.
  */
 import type { SectorElement } from "../../model/project";
-import { bendContour, bulgeSegment, closedFromHalf, flattenPath, normalizeWidth, type CubicSegment } from "../bezier";
+import { bendContour, bulgeSegment, closedFromHalf, flattenPath, flattenSegments, normalizeWidth, type CubicSegment } from "../bezier";
+import { difference, flattenRegions, offset } from "../boolean/clipper";
+import type { Region } from "../types";
 import { arc as arcMotif, spiral as spiralMotif } from "../motifs/builtin";
 import { getMotif, resolveParams, type MotifShape } from "../motifs/registry";
 import type { Contour, Vec2 } from "../types";
@@ -52,6 +54,18 @@ export const ELEMENT_PARAMS: Record<string, readonly ParamSpec[]> = {
   ],
   paisley: [], // filled in below (PAISLEY_PARAMS) after the true paisley is defined
   spiral: [{ key: "turns", label: "巻き数", min: 0.5, max: 4, step: 0.25, default: 1.5 }],
+  arch: [{ key: "pointed", label: "尖り (0=丸, 1=尖り)", min: 0, max: 1, step: 0.05, default: 0.3 }],
+  fan: [
+    { key: "pointed", label: "尖り (0=丸, 1=尖り)", min: 0, max: 1, step: 0.05, default: 0 },
+    { key: "spokes", label: "スポーク数", min: 0, max: 16, step: 1, default: 5 },
+    { key: "spokeWidth", label: "スポーク幅 (mm)", min: 0.5, max: 5, step: 0.1, default: 1.2 },
+    { key: "eye", label: "内側の眼の半径比", min: 0, max: 0.8, step: 0.05, default: 0 },
+    { key: "rim", label: "外周の縁幅 (mm, 0=なし)", min: 0, max: 5, step: 0.1, default: 0 },
+  ],
+  zigzag: [
+    { key: "waves", label: "山の数", min: 1, max: 12, step: 1, default: 4 },
+    { key: "tip", label: "先端の太さ比", min: 0.2, max: 1, step: 0.05, default: 1 },
+  ],
   arc: [],
   dot: [],
   circle: [],
@@ -158,11 +172,78 @@ export interface ElementShape extends MotifShape {
   inner?: Contour[];
 }
 
+/** Arch outline: flat base at -x, parallel sides, round or pointed top at +x. */
+export function buildArch(L: number, W: number, pointed: number, tolerance: number): Contour {
+  const p = Math.max(0, Math.min(1, pointed));
+  const h = Math.min(W / 2, L * 0.6) * (1 + 0.4 * p); // dome height grows a little when pointed
+  const x0 = L / 2 - h;
+  const seg: CubicSegment = {
+    start: { x: x0, y: W / 2 },
+    cp1: { x: x0 + h * (0.55 - 0.2 * p), y: W / 2 },
+    cp2: { x: L / 2 - h * 0.45 * p, y: (W / 2) * (0.55 * (1 - p) + 0.12 * p) },
+    end: { x: L / 2, y: 0 },
+  };
+  const dome = flattenSegments([seg], tolerance);
+  const half: Vec2[] = [{ x: -L / 2, y: W / 2 }, ...dome];
+  const lower = half
+    .slice(1, -1)
+    .reverse()
+    .map((q) => ({ x: q.x, y: -q.y }));
+  return [{ x: -L / 2, y: -W / 2 }, ...half, ...lower];
+}
+
+/**
+ * Fan: the arch aperture split by radial material spokes from the base centre,
+ * optionally with an inner "eye" (material disc) and an outer rim (material band).
+ */
+export function buildFan(L: number, W: number, o: { pointed: number; spokes: number; spokeWidth: number; eye: number; rim: number }, tolerance: number): Contour[] {
+  const arch = buildArch(L, W, o.pointed, tolerance);
+  let regions: Region[] = [{ outer: arch, holes: [] }];
+  if (o.rim > 0) {
+    const inner = flattenRegions(offset(regions, -o.rim, "round"));
+    // Keep the rim band AND the inner area as separate apertures? No: the rim is material, so cut = inner only plus nothing.
+    regions = inner.map((r) => ({ outer: r.outer, holes: [...r.holes] }));
+  }
+  const base: Vec2 = { x: -L / 2, y: 0 };
+  const n = Math.round(o.spokes);
+  const material: Region[] = [];
+  const reach = Math.hypot(L, W) + 2;
+  for (let i = 1; i <= n; i++) {
+    const a = -Math.PI / 2 + (Math.PI * i) / (n + 1); // spokes fan out from -90° to +90° around +x
+    const dir = { x: Math.cos(a), y: Math.sin(a) };
+    const nrm = { x: -dir.y * (o.spokeWidth / 2), y: dir.x * (o.spokeWidth / 2) };
+    const tip = { x: base.x + dir.x * reach, y: base.y + dir.y * reach };
+    material.push({ outer: [{ x: base.x - dir.x + nrm.x, y: base.y - dir.y + nrm.y }, { x: tip.x + nrm.x, y: tip.y + nrm.y }, { x: tip.x - nrm.x, y: tip.y - nrm.y }, { x: base.x - dir.x - nrm.x, y: base.y - dir.y - nrm.y }], holes: [] });
+  }
+  if (o.eye > 0) {
+    const r = Math.min(L, W / 2) * o.eye;
+    const disc: Vec2[] = [];
+    for (let i = 0; i < 40; i++) disc.push({ x: base.x + Math.cos((i / 40) * Math.PI * 2) * r, y: base.y + Math.sin((i / 40) * Math.PI * 2) * r });
+    material.push({ outer: disc, holes: [] });
+  }
+  const cut = material.length > 0 ? flattenRegions(difference(regions, material)) : regions;
+  return cut.map((r) => r.outer);
+}
+
+/** Zigzag polyline along +x with `waves` peaks of amplitude W/2. */
+export function buildZigzag(L: number, W: number, waves: number): Vec2[] {
+  const n = Math.max(1, Math.round(waves));
+  const pts: Vec2[] = [];
+  for (let i = 0; i <= 2 * n; i++) pts.push({ x: -L / 2 + (L * i) / (2 * n), y: i % 2 === 0 ? -W / 2 : W / 2 });
+  return pts;
+}
+
 /** Build the element's local shape. */
 export function buildElementShape(el: SectorElement, ctx: ElementBuildContext): ElementShape {
   const { length: L, width: W, tolerance, params: p } = ctx;
   const w0 = ctx.strokeWidth && ctx.strokeWidth > 0 ? ctx.strokeWidth : Math.max(1.2, W * 0.2);
   switch (el.type) {
+    case "arch":
+      return closed([buildArch(L, W, p.pointed ?? 0.3, tolerance)]);
+    case "fan":
+      return closed(buildFan(L, W, { pointed: p.pointed ?? 0, spokes: p.spokes ?? 5, spokeWidth: p.spokeWidth ?? 1.2, eye: p.eye ?? 0, rim: p.rim ?? 0 }, tolerance));
+    case "zigzag":
+      return closed(cleanBand(taperedBand(buildZigzag(L, W, p.waves ?? 4), (t) => w0 * (1 - (1 - (p.tip ?? 1)) * t), { roundStart: false, tolerance })));
     case "ccurve":
       return closed(cleanBand(buildCCurve(L, W, w0, p.tip ?? 0.35, tolerance)));
     case "hook":

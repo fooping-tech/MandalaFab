@@ -55,7 +55,8 @@ v0.2 の生成器は「帯ごとに単純なテンプレートを乱択して独
 - **Stencil Validation**: 脱落する島・細すぎるブリッジ・細すぎる材料（くびれ／壁）・細すぎる形状・小さすぎる穴・自己交差・重複パス・はみ出し を検出しハイライト
 - **自動 Bridge 生成**: 島を対称性を保って外側へ接続（中心の島は対称数由来の本数、周辺の島は放射方向）
 - 対称数 4 / 6 / 8 / 10 / 12 / 16 / 24 / 32 と任意値
-- プリセット 5 種: **Dense Floral Stencil**（12回対称・4帯+区切り帯・565 パス）、Floral Lace、Paisley Mandala、Lotus Lace、Ornamental Arabesque
+- プリセット 9 種: **Dense Floral Stencil**（12回対称・4帯+区切り帯・565 パス）、Floral Lace、Paisley Mandala、Lotus Lace、Ornamental Arabesque、および参考画像に合わせた文様プリセット **Arch Lace**（アーチ窓の重ね・扇・ドット）、**Scallop Fan Lace**（スカラップ縁と放射扇）、**Ainu Morew**（モレウ渦巻き・アイウシ棘・シク眼・ハート）、**Ethnic Border**（三角・バー・葉脈付きの葉・ジグザグ・ドット付きアーチ・太陽花・格子）
+- 文様用の要素: `arch`（アーチ、`pointed`）、`fan`（放射線入りの扇、`spokes` / `eye` / `rim`）、`zigzag`（テーパー帯のジグザグ、`waves`）、モチーフ `morew` / `urenmorew`（渦の隙間 `gap` を保って帯幅を自動で絞る）
 - **Density ベースの自動生成**（対称数・密度 0..1・seed）。密度が上がると帯・要素・局所リピート・装飾ドット・曲線の細部が増え、余白が減ります
 - シート 100 / 150 / 200 / 300 mm 角とカスタム、加工制約と材料プリセット（紙・プラ板・MDF・アクリル）
 - SVG 書き出し（mm 単位・viewBox・transform なし・閉じた compound path・重複除去・メタデータにプロジェクト JSON）

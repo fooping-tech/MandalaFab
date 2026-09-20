@@ -111,7 +111,7 @@ function ElementPanel({ store, ring, element: el }: { store: EditorStore; ring: 
   const specs = elementParamSpecs(el);
   const typeInfo = ELEMENT_TYPES.find((t) => t.type === el.type);
   const compounds = useEditor((s) => s.project.compounds);
-  const lineLike = el.type === "scurve" || el.type === "curl" || el.type === "spiral" || el.type === "connector" || (el.type === "bezier" && !el.closed);
+  const lineLike = el.type === "scurve" || el.type === "curl" || el.type === "spiral" || el.type === "connector" || el.type === "zigzag" || (el.type === "bezier" && !el.closed);
   return (
     <>
       <Section title="要素">

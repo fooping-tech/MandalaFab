@@ -26,6 +26,9 @@ export const ELEMENT_ICON: Record<ElementType, string> = {
   doublecurl: "∾",
   opposedcurl: "ᔕ",
   tendril: "࿄",
+  arch: "⌂",
+  fan: "◒",
+  zigzag: "⋀",
 };
 
 function elementLabel(e: SectorElement): string {

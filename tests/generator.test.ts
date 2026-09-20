@@ -43,7 +43,7 @@ describe("generator", () => {
 
 describe("presets", () => {
   it("all presets load, have no remaining islands and no validation errors", () => {
-    expect(PRESETS.length).toBe(5);
+    expect(PRESETS.length).toBe(9);
     for (const preset of PRESETS) {
       const p = loadPreset(preset.id);
       const g = generateMandala(p);
