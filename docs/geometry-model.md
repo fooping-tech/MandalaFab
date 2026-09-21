@@ -89,3 +89,15 @@ composeMandala({ symmetry, density, seed, templates? })
 ```
 
 境界接続の条件: 端点 `E = B(ρ) + n·gap/2`（n = 境界の内向き法線）、`E` での接線 = `-n`。`mirrorLocal` + 回転 = 境界での反射なので、隣 sector の曲線は `E` の鏡像から同じ接線で続く（C1）。
+
+## Output Polarity: design / material / cut（`src/geometry/stencil/output.ts`）
+
+| | Stencil | Positive |
+|---|---|---|
+| designGeometry | リングの図形の union（シートで切り取り） | 同じ |
+| materialGeometry | sheet − cut（ブリッジ適用後の開口を引いたもの） | design ∪ connectors |
+| cutGeometry（書き出し） | 開口（シートに開ける穴） | material の境界（外周 + 内部カット） |
+
+- **部品検出**: `materialComponents()` は Clipper のポリツリーの各ノード（穴の中の入れ子も含む）を 1 部品とする。入れ子は `nested`（穴の中に浮いた材料）。
+- **自動コネクタ** `generateConnectors()`: 部品を union-find で管理し、各ラウンドで各部品を最も近い別部品（bbox の隙間 ≤ maxSpan の候補 5 件を `closestPoints` で精査、最後に元の輪郭で再計算）と `connectorContour()` の帯で繋ぐ。帯は 3 次曲線（中心から外側へ膨らむ bulge）を `strokeOpen` で幅 `minConnectionWidth` にしたもので、両端を幅/2 + 0.6 mm 食い込ませる。対称なデザインでは対称に繋がる。ブーリアンは最後に 1 回だけ。
+- **Positive の検証**（`src/validation/positive.ts`）: 分離部品（`disconnected`）、小さすぎる孤立した飾り（`isolated-ornament`）、穴の中の浮いた材料（`unsupported-island`）、見た目は繋がっているが離れている箇所（部品同士の最短距離 < minGap、`narrow-gap`）、最小接続幅での opening（erode → dilate、round join・arcTolerance 0.3・0.25 mm に粗くした形状）から くびれ（`thin-neck`）と細い先端（`fragile-tip`）、最小形状幅で消える材料片（`small-feature`）、材料同士の狭い隙間（補集合の erosion、大きなデザインでは件数のみ）、小さい内部カット。square join の offset はこの形状で極端に遅い（43 s）ため round を使う。

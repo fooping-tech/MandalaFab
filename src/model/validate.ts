@@ -1,27 +1,6 @@
 import { hasMotif } from "../geometry/motifs/registry";
 import type { Vec2 } from "../geometry/types";
-import {
-  APP_VERSION,
-  DEFAULT_BRIDGES,
-  DEFAULT_CENTER,
-  DEFAULT_CONSTRAINTS,
-  DEFAULT_SHEET,
-  ELEMENT_TYPES,
-  LIMITS,
-  PROJECT_VERSION,
-  elementDefaults,
-  newId,
-  type BridgeSettings,
-  type CenterMotif,
-  type CompoundMotif,
-  type Constraints,
-  type ElementType,
-  type ManualBridge,
-  type Project,
-  type Ring,
-  type SectorElement,
-  type Sheet,
-} from "./project";
+import { APP_VERSION, DEFAULT_BRIDGES, DEFAULT_CENTER, DEFAULT_CONSTRAINTS, DEFAULT_SHEET, ELEMENT_TYPES, LIMITS, PROJECT_VERSION, elementDefaults, newId, type BridgeSettings, type CenterMotif, type CompoundMotif, type Constraints, type ElementType, type ManualBridge, type Project, type Ring, type SectorElement, type Sheet, DEFAULT_OUTPUT, type OutputSettings } from "./project";
 
 const clamp = (v: number, min: number, max: number): number => Math.min(max, Math.max(min, v));
 
@@ -240,6 +219,16 @@ function migrateV1Ring(raw: Record<string, unknown>, index: number): Ring {
  * Validate and normalise untrusted project JSON (file, URL, localStorage, presets).
  * v1 projects (rings with `motif`/`count`) are migrated to v2 sectors.
  */
+function normalizeOutput(raw: unknown): OutputSettings {
+  const o = isRecord(raw) ? raw : {};
+  return {
+    polarity: o.polarity === "positive" ? "positive" : "stencil",
+    minConnectionWidth: num(o.minConnectionWidth, DEFAULT_OUTPUT.minConnectionWidth, 0.1, 20),
+    autoConnect: o.autoConnect !== false,
+    maxConnectorSpan: num(o.maxConnectorSpan, DEFAULT_OUTPUT.maxConnectorSpan, 0, 100),
+  };
+}
+
 export function normalizeProject(raw: unknown): Project {
   const p = isRecord(raw) ? raw : {};
   const ringsRaw = Array.isArray(p.rings) ? p.rings.slice(0, LIMITS.rings) : [];
@@ -264,6 +253,7 @@ export function normalizeProject(raw: unknown): Project {
     constraints: normalizeConstraints(p.constraints),
     bridges: normalizeBridges(p.bridges),
     manualBridges: (Array.isArray(p.manualBridges) ? p.manualBridges : []).map(normalizeManualBridge).filter((b): b is ManualBridge => b !== null),
+    output: normalizeOutput(p.output),
   };
   if (seed !== undefined) project.seed = seed;
   if (gen) {

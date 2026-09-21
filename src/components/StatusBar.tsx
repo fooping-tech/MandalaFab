@@ -55,7 +55,7 @@ export function StatusBar({ store }: { store: EditorStore }) {
       <div className="hidden font-mono tabular-nums lg:block">{cursor ? `X ${cursor.x.toFixed(2)}  Y ${cursor.y.toFixed(2)}  r ${cursor.r.toFixed(2)}  θ ${cursor.angle.toFixed(1)}°` : "X —  Y —"}</div>
       <div className="flex shrink-0 items-center gap-2 tabular-nums sm:gap-3">
         <span title="書き出されるパス数（subpath）">パス {d.counts.subpaths}</span>
-        <span title="ブリッジ数">ブリッジ {d.counts.bridges}</span>
+        <span title={d.polarity === "positive" ? "コネクタ数（部品数）" : "ブリッジ数"}>{d.polarity === "positive" ? `コネクタ ${d.counts.connectors} · 部品 ${d.counts.components}` : `ブリッジ ${d.counts.bridges}`}</span>
         {v && <span title="カット線の総延長">カット {v.stats.cutLength >= 1000 ? `${(v.stats.cutLength / 1000).toFixed(2)} m` : `${v.stats.cutLength.toFixed(0)} mm`}</span>}
         <span className={render.validating ? "text-ink-3" : errors > 0 ? "text-error" : warnings > 0 ? "text-warn" : "text-ok"} title="検証結果">
           {render.validating ? "検証中…" : errors > 0 ? `✕ ${errors} エラー` : warnings > 0 ? `△ ${warnings} 警告` : "✓ 問題なし"}

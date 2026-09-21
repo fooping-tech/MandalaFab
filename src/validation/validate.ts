@@ -8,6 +8,8 @@ import { cleanRegions, difference, flattenRegions, offset, regionArea } from "..
 import type { MandalaGeometry } from "../geometry/radial/mandala";
 import { sheetRegion } from "../geometry/stencil/sheet";
 import type { StencilGeometry } from "../geometry/stencil/pipeline";
+import type { OutputGeometry } from "../geometry/stencil/output";
+import { validatePositive } from "./positive";
 import { contourExtent } from "../geometry/stencil/islands";
 import type { Contour, RegionNode } from "../geometry/types";
 import { area, bounds, centroid, containsPoint, perimeter, segmentsIntersect } from "../geometry/vec";
@@ -15,6 +17,13 @@ import { area, bounds, centroid, containsPoint, perimeter, segmentsIntersect } f
 export type Severity = "error" | "warning" | "info";
 
 export type IssueCode =
+  | "disconnected"
+  | "isolated-ornament"
+  | "unsupported-island"
+  | "thin-neck"
+  | "fragile-tip"
+  | "small-feature"
+  | "narrow-gap"
   | "island"
   | "bridge-too-narrow"
   | "thin-material"
@@ -96,12 +105,14 @@ interface ErosionCheck {
  * the difference slivers that are big and elongated enough to be a real neck
  * (sharp corners also leave slivers; those are filtered out by size).
  */
-function erosionCheck(regions: readonly RegionNode[], w: number, locate: boolean): ErosionCheck {
+export function erosionCheck(regions: readonly RegionNode[], w: number, locate: boolean, style: { join?: "square" | "round"; arcTolerance?: number; clean?: number } = {}): ErosionCheck {
   if (regions.length === 0 || w <= 0) return { vanished: [], necks: [], split: false, changes: 0 };
-  // Coarsen vertices first: the check tolerates 0.1 mm error and offsetting cost grows with vertex count.
-  const flat = cleanRegions(regions, Math.min(0.1, w / 10)).map((r) => ({ ...r, children: [], childHole: [] }) as RegionNode);
+  const join = style.join ?? "square";
+  const arcTol = style.arcTolerance ?? 0.02;
+  // Coarsen vertices first: the check tolerates ~0.1 mm error and offsetting cost grows with vertex count.
+  const flat = cleanRegions(regions, Math.min(style.clean ?? 0.1, w / 10)).map((r) => ({ ...r, children: [], childHole: [] }) as RegionNode);
   if (flat.length === 0) return { vanished: [], necks: [], split: false, changes: 0 };
-  const eroded = offset(flat, -w / 2, "square");
+  const eroded = offset(flat, -w / 2, join, arcTol);
   const erodedFlat = flattenRegions(eroded);
   const erodedInfo = erodedFlat.map((e) => ({ p: e.outer[0]!, b: bounds([e.outer]) }));
   const vanished: RegionNode[] = [];
@@ -120,7 +131,7 @@ function erosionCheck(regions: readonly RegionNode[], w: number, locate: boolean
   const split = changes > 0;
   let necks: Contour[] = [];
   if (split && locate) {
-    const opened = offset(erodedFlat, w / 2, "square");
+    const opened = offset(erodedFlat, w / 2, join, arcTol);
     const slivers = flattenRegions(difference(flat, flattenRegions(opened)));
     const minArea = 0.8 * w * w;
     necks = slivers
@@ -137,9 +148,15 @@ export interface ValidateInput {
   stencil: StencilGeometry;
   constraints: Constraints;
   sheet: { width: number; height: number; outline: boolean; cornerRadius: number };
+  /** Output polarity geometry; when positive, the positive-mode checks run instead. */
+  output?: OutputGeometry;
+  minConnectionWidth?: number;
 }
 
 export function validateStencil(input: ValidateInput): ValidationResult {
+  if (input.output && input.output.polarity === "positive") {
+    return validatePositive({ output: input.output, constraints: input.constraints, minConnectionWidth: input.minConnectionWidth ?? input.constraints.minGap, sheet: input.sheet });
+  }
   const { geometry, stencil, constraints } = input;
   const issues: ValidationIssue[] = [];
   let n = 0;

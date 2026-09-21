@@ -4,6 +4,10 @@
  * the app and synchronously in tests.
  */
 import { bounds } from "../geometry/vec";
+import { buildOutput, strayComponents } from "../geometry/stencil/output";
+import { sheetRegion } from "../geometry/stencil/sheet";
+import { difference } from "../geometry/boolean";
+import type { OutputPolarity } from "../model/project";
 import type { Project } from "../model/project";
 import { generateMandala, CENTER_ID } from "../geometry/radial/mandala";
 import { buildStencil } from "../geometry/stencil/pipeline";
@@ -30,6 +34,15 @@ export interface ElementPath {
 
 /** Geometry stage (fast): what is drawn. */
 export interface StencilRender {
+  polarity: OutputPolarity;
+  /** Material that remains (design coordinates): stencil = sheet − cuts, positive = the mandala + connectors. */
+  materialPath: string;
+  /** Positive mode: sheet − material (what the laser removes). */
+  wastePath: string;
+  /** Positive mode: connector bands that were added. */
+  connectorPath: string;
+  /** Positive mode: pieces other than the main one (before connectors / remaining). */
+  strayPath: string;
   /** Per-element raw outlines (all copies) for the design view and hit-testing. */
   elementPaths: ElementPath[];
   /** Per-ring compound paths (raw cut regions). */
@@ -44,7 +57,7 @@ export interface StencilRender {
   bridgePath: string;
   islandPath: string;
   notes: string[];
-  counts: { islandsBefore: number; islands: number; bridges: number; subpaths: number; overflow: boolean };
+  counts: { islandsBefore: number; islands: number; bridges: number; subpaths: number; overflow: boolean; components: number; componentsBefore: number; connectors: number };
   computeMs: number;
 }
 
@@ -94,7 +107,8 @@ export interface Staged {
 export function computeStaged(project: Project): Staged {
   const t0 = now();
   const geometry = generateMandala(project);
-  const stencilGeom = buildStencil(project, geometry);
+  const output = buildOutput(project, geometry);
+  const stencilGeom = output.stencil;
   const elementPaths: ElementPath[] = [];
   const ringPaths = geometry.rings.map((ring) => {
     for (const e of ring.elements) {
@@ -108,11 +122,19 @@ export function computeStaged(project: Project): Staged {
   });
   const centerPath = regionsToPath(geometry.center);
   if (centerPath) elementPaths.push({ ringId: CENTER_ID, elementId: CENTER_ID, mode: "cut", d: centerPath, boxes: [] });
-  const finalFlat = flattenRegions(stencilGeom.final);
+  const finalFlat = flattenRegions(output.cutGeometry);
   const finalPath = regionsToPath(finalFlat);
-  const exported = regionsPathData(stencilGeom.final, { x: 0, y: 0 }, 3);
+  const exported = regionsPathData(output.cutGeometry, { x: 0, y: 0 }, 3);
   const subpaths = finalFlat.reduce((n, r) => n + 1 + r.holes.length, 0);
+  const positive = output.polarity === "positive";
+  const materialFlat = flattenRegions(output.materialGeometry);
+  const stray = positive ? strayComponents(output.components) : [];
   const stencil: StencilRender = {
+    polarity: output.polarity,
+    materialPath: positive ? regionsToPath(materialFlat) : "",
+    wastePath: positive ? regionsToPath(flattenRegions(difference([sheetRegion(project.sheet)], materialFlat))) : "",
+    connectorPath: output.connectors.map((c) => contourToPath(c.contour)).join(""),
+    strayPath: stray.map((c) => contourToPath(c.region.outer)).join(""),
     elementPaths,
     ringPaths,
     centerPath,
@@ -122,12 +144,21 @@ export function computeStaged(project: Project): Staged {
     bridgePath: stencilGeom.bridges.map((b) => contourToPath(bridgeContour(b))).join(""),
     islandPath: stencilGeom.islandsBefore.map((i) => contourToPath(i.contour)).join(""),
     notes: geometry.rings.flatMap((r) => r.notes),
-    counts: { islandsBefore: stencilGeom.islandsBefore.length, islands: stencilGeom.islands.length, bridges: stencilGeom.bridges.length, subpaths, overflow: stencilGeom.overflow },
+    counts: {
+      islandsBefore: positive ? Math.max(0, output.componentsBefore.length - 1) : stencilGeom.islandsBefore.length,
+      islands: positive ? stray.length : stencilGeom.islands.length,
+      bridges: positive ? output.connectors.length : stencilGeom.bridges.length,
+      subpaths,
+      overflow: output.overflow,
+      components: output.components.length,
+      componentsBefore: output.componentsBefore.length,
+      connectors: output.connectors.length,
+    },
     computeMs: now() - t0,
   };
   const validate = (): ValidationRender => {
     const t1 = now();
-    const validation = validateStencil({ geometry, stencil: stencilGeom, constraints: project.constraints, sheet: project.sheet });
+    const validation = validateStencil({ geometry, stencil: stencilGeom, constraints: project.constraints, sheet: project.sheet, output, minConnectionWidth: project.output.minConnectionWidth });
     const issuePaths = validation.issues.filter((i) => i.contours.length > 0).map((i) => ({ id: i.id, severity: i.severity, d: contoursToPath(i.contours) }));
     return { validation, issuePaths, computeMs: now() - t1 };
   };
@@ -138,8 +169,8 @@ export function computeStaged(project: Project): Staged {
 export function computeValidation(project: Project): ValidationRender {
   const t1 = now();
   const geometry = generateMandala(project);
-  const stencilGeom = buildStencil(project, geometry);
-  const validation = validateStencil({ geometry, stencil: stencilGeom, constraints: project.constraints, sheet: project.sheet });
+  const output = buildOutput(project, geometry);
+  const validation = validateStencil({ geometry, stencil: output.stencil, constraints: project.constraints, sheet: project.sheet, output, minConnectionWidth: project.output.minConnectionWidth });
   const issuePaths = validation.issues.filter((i) => i.contours.length > 0).map((i) => ({ id: i.id, severity: i.severity, d: contoursToPath(i.contours) }));
   return { validation, issuePaths, computeMs: now() - t1 };
 }

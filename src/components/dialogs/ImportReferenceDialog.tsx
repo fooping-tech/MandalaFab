@@ -241,7 +241,7 @@ export function ImportReferenceDialog({ store, onClose }: { store: EditorStore; 
         name: loaded ? loaded.file.name.replace(/\.[^.]+$/, "") : "Imported",
       });
       r.project.constraints = { ...project.constraints };
-      r.project.bridges = { ...project.bridges, auto: mode !== "trace" };
+      r.project.bridges = { ...project.bridges, auto: mode === "stencil" || mode === "cells" };
       setResult(r);
       setValidation(null);
       setBusy("ステンシル検証中…");
@@ -547,6 +547,7 @@ export function ImportReferenceDialog({ store, onClose }: { store: EditorStore; 
                   { value: "trace", label: "A: Trace Only（忠実にベクタ化）" },
                   { value: "stencil", label: "B: Stencilize（塗り形状: 帯化・島検出・ブリッジ・小穴除去）" },
                   { value: "cells", label: "B′: Stencilize (cells)（線画: 線で囲まれた領域を抜き、線を材料に残す）" },
+                  { value: "positive", label: "C: Positive Cutout（黒い模様を残す材料として切り出す）" },
                 ]}
               />
               {preReply && strokePx > 0 && (

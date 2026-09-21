@@ -107,3 +107,13 @@ v1 と同じ。`GeneratorParams` は `{ symmetry, density, seed }`（complexity 
 - 挿入時は `freshIds()` で要素・リング・複合モチーフの id を振り直し、`ref` も同時に付け替える。プロジェクトに同じ id の複合モチーフがあれば追加しない（`insertPartElement` / `insertPartRing`）。
 - 生成器の設定 `project.generator` には `partsFrequency`（0..1）と `partWeights`（パーツ id → 重み、0 = 不使用）も保存される。`generateProject(params, base, elementParts)` がライブラリの要素パーツから `PartsSettings`（候補 + 頻度）を作り、Composition Engine の `SectorContext.pickPart()` が各枠で頻度の確率と重みで候補を選ぶ。パーツは `scaleX/scaleY` で枠の大きさに合わせ、参照する複合モチーフは生成プロジェクトの `compounds` に取り込まれる。
 - 読み込みは `parseLibrary()` → `normalizeLibraryItem()` を必ず通す（要素は `normalizeElement`、リングは `normalizeRing`、プロジェクトは `normalizeProject`）。壊れた項目は捨てる。ファイル・配列・単一項目のいずれも受け付ける。
+
+## 出力（Output Polarity）
+
+```json
+"output": { "polarity": "stencil" | "positive", "minConnectionWidth": 1.5, "autoConnect": true, "maxConnectorSpan": 14 }
+```
+
+- `polarity`: `stencil`（曼荼羅 = 抜く領域、シート = 残る材料）または `positive`（曼荼羅 = 残る材料、外側 = 除去）。省略時は `stencil`。
+- `minConnectionWidth`: Positive でこれより細いつながりを「くびれ」として警告し、自動コネクタの帯幅にもなる（0.1〜20 mm）。
+- `autoConnect` / `maxConnectorSpan`: Positive で離れた部品を曲線の帯で自動的に繋ぐか、その最大長。

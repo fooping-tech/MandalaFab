@@ -191,6 +191,21 @@ export interface ManualBridge {
   rotation: number;
 }
 
+/** What the laser leaves behind: the sheet with the mandala cut out, or the mandala itself. */
+export type OutputPolarity = "stencil" | "positive";
+
+export interface OutputSettings {
+  polarity: OutputPolarity;
+  /** Positive mode: the narrowest material link that counts as connected (mm). */
+  minConnectionWidth: number;
+  /** Positive mode: join separate pieces with curved connector bands automatically. */
+  autoConnect: boolean;
+  /** Positive mode: longest gap an automatic connector may span (mm). */
+  maxConnectorSpan: number;
+}
+
+export const DEFAULT_OUTPUT: OutputSettings = { polarity: "stencil", minConnectionWidth: 1.5, autoConnect: true, maxConnectorSpan: 14 };
+
 export interface Sheet {
   width: number;
   height: number;
@@ -220,6 +235,7 @@ export interface Project {
   constraints: Constraints;
   bridges: BridgeSettings;
   manualBridges: ManualBridge[];
+  output: OutputSettings;
   seed?: number;
   generator?: GeneratorParams;
 }
@@ -366,6 +382,7 @@ export function emptyProject(name = "Untitled Mandala"): Project {
     constraints: { ...DEFAULT_CONSTRAINTS },
     bridges: { ...DEFAULT_BRIDGES },
     manualBridges: [],
+    output: { ...DEFAULT_OUTPUT },
   };
 }
 

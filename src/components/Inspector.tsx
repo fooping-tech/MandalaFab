@@ -18,6 +18,7 @@ import {
   updateConstraints,
   updateElement,
   updateElementParam,
+  updateOutput,
   updateProject,
   updateRing,
   updateSheet,
@@ -378,7 +379,7 @@ function ReferencePanel({ store }: { store: EditorStore }) {
 
 function ProjectPanel({ store }: { store: EditorStore }) {
   const project = useEditor((s) => s.project);
-  const { sheet, constraints, bridges } = project;
+  const { sheet, constraints, bridges, output } = project;
   const sheetPreset = SHEET_PRESETS.find((p) => p.width === sheet.width && p.height === sheet.height);
   const materialMatch = useMemo(() => MATERIAL_PRESETS.find((m) => JSON.stringify(m.constraints) === JSON.stringify(constraints)), [constraints]);
   return (
@@ -429,6 +430,27 @@ function ProjectPanel({ store }: { store: EditorStore }) {
         <Toggle label="外形も出力する" checked={sheet.outline} onChange={(outline) => store.execute(updateSheet({ outline }))} />
         {sheet.outline && <NumberField label="角の丸み" value={sheet.cornerRadius} onChange={(cornerRadius) => store.execute(updateSheet({ cornerRadius }))} min={0} max={50} step={0.5} unit="mm" />}
       </Section>
+      <Section title="出力（Output Polarity）">
+        <div className="flex gap-1" role="radiogroup" aria-label="Output">
+          <SmallButton active={output.polarity === "stencil"} onClick={() => store.execute(updateOutput({ polarity: "stencil" }))} title="曼荼羅をシートから抜く（ステンシル）。背景シートが残る">
+            Stencil
+          </SmallButton>
+          <SmallButton active={output.polarity === "positive"} onClick={() => store.execute(updateOutput({ polarity: "positive" }))} title="曼荼羅そのものを 1 つの部品として切り残す。外側は除去">
+            Positive
+          </SmallButton>
+        </div>
+        <p className="text-[10px] leading-relaxed text-ink-3">
+          {output.polarity === "stencil" ? "Stencil: 曼荼羅 = 抜く領域、シート = 残る材料。島はブリッジで繋ぎます。" : "Positive: 曼荼羅 = 残る材料、外側 = 除去。離れた図柄はコネクタ（曲線の帯）で繋ぎ、1 つの部品にします。"}
+        </p>
+        {output.polarity === "positive" && (
+          <>
+            <NumberField label="最小接続幅（min connection width）" value={output.minConnectionWidth} onChange={(minConnectionWidth) => store.execute(updateOutput({ minConnectionWidth }))} min={0.2} max={10} step={0.1} unit="mm" title="これより細いつながりは「くびれ」として警告。コネクタの帯幅にもなります" />
+            <Toggle label="自動コネクタ（離れた部品を繋ぐ）" checked={output.autoConnect} onChange={(autoConnect) => store.execute(updateOutput({ autoConnect }))} />
+            {output.autoConnect && <NumberField label="コネクタの最大長" value={output.maxConnectorSpan} onChange={(maxConnectorSpan) => store.execute(updateOutput({ maxConnectorSpan }))} min={0} max={60} step={1} unit="mm" />}
+          </>
+        )}
+      </Section>
+      {output.polarity === "stencil" && (
       <Section title="ブリッジ">
         <Toggle label="自動ブリッジ" checked={bridges.auto} onChange={(auto) => store.execute(updateBridges({ auto }))} />
         <NumberField label="ブリッジ幅" value={bridges.width} onChange={(width) => store.execute(updateBridges({ width }))} min={0.2} max={10} step={0.1} unit="mm" />
@@ -449,6 +471,7 @@ function ProjectPanel({ store }: { store: EditorStore }) {
         />
         <NumberField label="食い込み" value={bridges.overlap} onChange={(overlap) => store.execute(updateBridges({ overlap }))} min={0} max={3} step={0.1} unit="mm" />
       </Section>
+      )}
       <Section title="加工制約">
         <SelectField
           label="材料プリセット"
@@ -480,17 +503,17 @@ function ChecksPanel({ store }: { store: EditorStore }) {
       <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px] text-ink-2">
         <span>書き出しパス</span>
         <span className="text-right font-mono">{d.counts.subpaths}</span>
-        <span>島（ブリッジ前）</span>
+        <span>{d.polarity === "positive" ? "分離部品（コネクタ前）" : "島（ブリッジ前）"}</span>
         <span className="text-right font-mono">{d.counts.islandsBefore}</span>
-        <span>島（残り）</span>
+        <span>{d.polarity === "positive" ? "分離部品（残り）" : "島（残り）"}</span>
         <span className={`text-right font-mono ${d.counts.islands > 0 ? "text-error" : ""}`}>{d.counts.islands}</span>
-        <span>ブリッジ</span>
+        <span>{d.polarity === "positive" ? "コネクタ" : "ブリッジ"}</span>
         <span className="text-right font-mono">{d.counts.bridges}</span>
         {v && (
           <>
             <span>カット長</span>
             <span className="text-right font-mono">{v.stats.cutLength.toFixed(0)} mm</span>
-            <span>切り抜き面積</span>
+            <span>{d.polarity === "positive" ? "残る材料の面積" : "切り抜き面積"}</span>
             <span className="text-right font-mono">{v.stats.apertureArea.toFixed(0)} mm²</span>
           </>
         )}

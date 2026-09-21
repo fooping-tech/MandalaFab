@@ -294,3 +294,26 @@
 
 - テスト 118 件成功、ビルド成功。Playwright（iPad gen 7 エミュレーション 810×1080）: 「描く」を touchscreen.tap で ON/OFF、揺れを加えた 60 点のペン線 → `bezier` 7 点（2 セグメント）、Inspector（シート）の x フィールドで ＋ → −52.5 → −52、− → −52.5、スライダーの中央から 70% へドラッグ → 25、グリップを 60 px ドラッグ → 30（10 step）。コンソールエラーなし。
 - 限界: 実機の Apple Pencil は未確認（合成 pointer イベントで確認）。長押しの連続変更はボタン外へ指が出ると止まる。
+
+## Output Polarity: Stencil / Positive（2026-09-21）
+
+### 要求
+
+- 曼荼羅を抜くステンシルに加えて、曼荼羅そのものを切り残す Positive / Silhouette モードを追加する。design / material / cut ジオメトリの分離、連結成分・分離部品の検出、自動コネクタ、外周生成、Positive 専用の検証（分離、くびれ、孤立した飾り、細い先端、細すぎる材料、浮いた島、隙間。最小接続幅を設定可能）、UI の切替、極性に応じた SVG 書き出し、インポートでの Positive Cutout。
+
+### 実装
+
+- モデル: `Project.output = { polarity, minConnectionWidth, autoConnect, maxConnectorSpan }`（`normalizeProject` で補完・クランプ、既存 JSON は stencil）。コマンド `updateOutput`。
+- ジオメトリ `src/geometry/stencil/output.ts`: `buildOutput()` が `OutputGeometry { designGeometry, materialGeometry, cutGeometry, stencil, connectors, componentsBefore, components }` を返す。Stencil は従来の `buildStencil` を包み、material = sheet − final。Positive は design を部品に分け（`materialComponents`、入れ子は `nested`）、`generateConnectors()`（union-find + 最近傍、曲線の帯、最後に union 1 回）で繋ぎ、material = design ∪ connectors、cut = material の境界。
+- 検証: `validateStencil` は `output` が Positive のとき `validatePositive`（`src/validation/positive.ts`）へ委譲。分離部品 / 孤立した飾り / 浮いた材料 / 部品間の狭い隙間（0.2 mm 問題）/ くびれ / 細い先端 / 細すぎる材料 / 材料同士の狭い隙間 / 小さい内部カット。`erosionCheck` に join・arcTolerance・clean オプションを追加（Stencil は従来どおり square）。
+- パイプライン: `computeStaged` / `computeValidation` が `buildOutput` を使い、`StencilRender` に `polarity` / `materialPath` / `wastePath` / `connectorPath` / `strayPath` と部品数・コネクタ数を追加。書き出しは `output.cutGeometry`（SVG の title / desc / path id が極性を示す）。
+- UI: ツールバーに「Stencil / Positive」トグル、Inspector に「出力（Output Polarity）」（切替、最小接続幅、自動コネクタ、最大長。ブリッジ節は Stencil のみ）、加工チェックの見出し（分離部品・コネクタ・残る材料の面積）、ステータスバー（コネクタ・部品）。キャンバス: Positive の材料ビューは残る曼荼羅を白・除去部を背景色、抜きビューは除去領域を黒 + カットライン、コネクタを緑、分離部品を赤破線で表示。ヒント文も極性に応じる。
+- インポート: `ImportMode` に `positive`（黒い模様を残す材料として取り込み、`output.polarity = positive`、ブリッジなし）。ダイアログに「C: Positive Cutout」。
+- 性能: 初版は Dense Floral（649 部品）で コネクタ 33 s・検証 69 s。コネクタを union-find に変えて 1.4 s、検証は square join の erosion が 43 s と極端に遅かったので round join（arcTolerance 0.3、0.25 mm に粗く）にして 5 s。
+- テスト `tests/polarity.test.ts`（Stencil: material = sheet − cut、Positive: material = design ∪ connectors・cut = material 境界・9 部品 → 1、両極性の SVG 書き出し、正規化、`closestPoints` と 2 正方形の接続、穴の中の部品の接続、自動コネクタ OFF で `disconnected` → ON で合格、0.2 mm 隙間の `narrow-gap`、0.6 mm ネックの `thin-neck`、`isolated-ornament` / `unsupported-island`、Dense Floral が Positive で 1 部品になり書き出せる）。`scripts/polarity-view.test.ts` / `scripts/prof-positive.test.ts`。
+
+### 結果
+
+- テスト 127 件成功（全体 280 s。並列実行で CPU が詰まると 120 s タイムアウトに掛かる重いテストがあるので、失敗したら単独で再実行）、ビルド成功。
+- Playwright（Ethnic Border）: ツールバー「Stencil」→「Positive」で パス 265 / ブリッジ 24 → パス 4 / コネクタ 243 · 部品 1、材料ビューが「残る曼荼羅が白」、コネクタ表示、Inspector に出力節（ブリッジ節は非表示）、検証で くびれ 40 / 細い先端 40 の警告、Inspector の Stencil ボタンで戻り、リロード後も Positive を保持。コンソールエラーなし。目視: Ethnic Border / Dense Floral の両方で 1 部品（コネクタ 243 / 648）、書き出しパス 4 / 10。
+- 限界: コネクタは最短距離の曲線帯で、既存の蔓・カール要素の形を流用するところまでは至っていない（要素として `connector` / `vine` を手で足すことはできる）。細い装飾が多いデザインでは くびれ・細い先端の警告が多く出る。Positive の検証で「材料同士の狭い隙間」は大きなデザインでは件数のみ。

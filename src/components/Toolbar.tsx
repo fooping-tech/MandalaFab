@@ -4,6 +4,7 @@ import { useIsMobile } from "../app/use-media";
 import { actionAddRing, actionExportSVG, actionNew, actionOpen, actionSaveJSON } from "../editor/actions";
 import { useRenderState } from "../editor/render-context";
 import { useEditor, type EditorStore } from "../editor/store";
+import { updateOutput } from "../editor/commands";
 import { APP_VERSION } from "../model/project";
 
 interface Props {
@@ -41,6 +42,7 @@ export function Toolbar({ store, openDialog, canvasApi }: Props) {
   const canRedo = useEditor((s) => s.canRedo);
   const view = useEditor((s) => s.view);
   const name = useEditor((s) => s.project.name);
+  const polarity = useEditor((s) => s.project.output.polarity);
   const render = useRenderState();
   const mobile = useIsMobile();
   const headerRef = useRef<HTMLElement>(null);
@@ -89,6 +91,7 @@ export function Toolbar({ store, openDialog, canvasApi }: Props) {
     { kind: "btn", key: "redo", icon: "↷", label: "進む", onClick: () => store.redo(), disabled: !canRedo, title: "やり直し (⌘⇧Z)", priority: 4 },
     { kind: "sep", key: "s2" },
     { kind: "btn", key: "ring", icon: "＋", label: "リング", onClick: () => actionAddRing(store), title: "リング（セクタ）を追加 (N)", priority: 1 },
+    { kind: "btn", key: "polarity", icon: polarity === "positive" ? "◉" : "◎", label: polarity === "positive" ? "Positive" : "Stencil", onClick: () => store.execute(updateOutput({ polarity: polarity === "positive" ? "stencil" : "positive" })), active: polarity === "positive", title: polarity === "positive" ? "Output: Positive（曼荼羅そのものを切り残す）→ クリックで Stencil へ" : "Output: Stencil（シートに曼荼羅を抜く）→ クリックで Positive へ", priority: 2 },
     { kind: "sep", key: "s3" },
     { kind: "btn", key: "design", icon: "◌", label: "デザイン", onClick: () => store.setView({ mode: "design" }), active: view.mode === "design", title: "要素ごとの形状（S で切替）", priority: 4 },
     { kind: "btn", key: "material", icon: "▢", label: "材料", onClick: () => store.setView({ mode: "material" }), active: view.mode === "material", title: "Material View: 残る材料を白で表示", priority: 4 },

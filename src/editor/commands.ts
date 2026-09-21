@@ -10,6 +10,7 @@ import {
   type CenterMotif,
   type CompoundMotif,
   type Constraints,
+  type OutputSettings,
   type ElementType,
   type Project,
   type Ring,
@@ -368,6 +369,7 @@ export const updateProject = (patch: Partial<Pick<Project, "name" | "symmetry" |
 
 export const updateSheet = (patch: Partial<Sheet>): Command => ({ label: "シート設定", coalesceKey: `sheet:${keys(patch)}`, apply: (p) => ({ ...p, sheet: { ...p.sheet, ...patch } }) });
 export const updateConstraints = (patch: Partial<Constraints>): Command => ({ label: "加工制約", coalesceKey: `constraints:${keys(patch)}`, apply: (p) => ({ ...p, constraints: { ...p.constraints, ...patch } }) });
+export const updateOutput = (patch: Partial<OutputSettings>): Command => ({ label: patch.polarity ? `出力: ${patch.polarity === "positive" ? "Positive" : "Stencil"}` : "出力設定", coalesceKey: `output:${keys(patch)}`, apply: (p) => ({ ...p, output: { ...p.output, ...patch } }) });
 export const updateBridges = (patch: Partial<BridgeSettings>): Command => ({ label: "ブリッジ設定", coalesceKey: `bridges:${keys(patch)}`, apply: (p) => ({ ...p, bridges: { ...p.bridges, ...patch } }) });
 
 /** Change symmetry; rings whose repeat was a multiple of the old symmetry follow. */

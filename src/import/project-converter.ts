@@ -18,7 +18,7 @@ import { pickSectorContours, rotateContour } from "./sector-extract";
 import { estimateStrokeWidth } from "./contours";
 import type { Point, TracedContour } from "./types";
 
-export type ImportMode = "trace" | "stencil" | "cells";
+export type ImportMode = "trace" | "stencil" | "cells" | "positive";
 
 export interface BandSetting {
   rMinMm: number;
@@ -187,7 +187,9 @@ export function convertContours(contours: readonly TracedContour[], s0: ConvertS
   project.symmetry = s.symmetry;
   project.sheet = { width: s.sheet.width, height: s.sheet.height, outline: false, cornerRadius: 0 };
   project.center = { ...project.center, type: "none" };
-  project.bridges = { ...project.bridges, auto: s.mode !== "trace" };
+  project.bridges = { ...project.bridges, auto: s.mode === "stencil" || s.mode === "cells" };
+  // Positive Cutout: the dark pattern is the material that remains (the mandala is the part).
+  if (s.mode === "positive") project.output = { ...project.output, polarity: "positive" };
   const maxR = shapes.reduce((m, sh) => Math.max(m, ...sh.outer.map((p) => Math.hypot(p.x, p.y))), 1);
   const centerLimit = Math.max(4, maxR * 0.08);
   const infos: ImportedElementInfo[] = [];

@@ -15,7 +15,7 @@ import { newElement, type ElementType } from "../model/project";
 import { pickFile, safeFileName, saveFile } from "./persist";
 import type { RenderData } from "./pipeline";
 import { generateMandala } from "../geometry/radial/mandala";
-import { buildStencil } from "../geometry/stencil/pipeline";
+import { buildOutput } from "../geometry/stencil/output";
 import type { EditorStore } from "./store";
 
 export function actionNew(store: EditorStore): void {
@@ -220,11 +220,14 @@ export function actionExportSVG(store: EditorStore, render: RenderData | null): 
   const data = render;
   void data;
   const geometry = generateMandala(project);
-  const stencil = buildStencil(project, geometry);
-  if (stencil.islands.length > 0) {
-    store.notify(`脱落する島が ${stencil.islands.length} 個残っています。ブリッジ設定を確認してください（書き出しは続行します）。`, "error");
+  const output = buildOutput(project, geometry);
+  if (output.polarity === "stencil" && output.stencil.islands.length > 0) {
+    store.notify(`脱落する島が ${output.stencil.islands.length} 個残っています。ブリッジ設定を確認してください（書き出しは続行します）。`, "error");
   }
-  const { svg, subpaths } = exportSVG(project, stencil.final);
+  if (output.polarity === "positive" && output.components.length > 1) {
+    store.notify(`材料が ${output.components.length} 個の部品に分かれています。コネクタ設定を確認してください（書き出しは続行します）。`, "error");
+  }
+  const { svg, subpaths } = exportSVG(project, output.cutGeometry);
   saveFile(`${safeFileName(project.name)}.svg`, svg, "image/svg+xml");
   store.notify(`SVGを書き出しました（${subpaths} パス）。`, "success");
 }

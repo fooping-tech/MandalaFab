@@ -493,6 +493,7 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
   const warnIssues = d.issuePaths.filter((i) => i.severity !== "error");
   const selRingId = selRing?.id ?? null;
   const isMaterial = view.mode === "material";
+  const positive = d.polarity === "positive";
   const isPreview = view.mode === "preview";
   const bg = isMaterial ? "#5b6470" : "#e9edf1";
 
@@ -590,7 +591,7 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
         </defs>
 
         {/* Sheet */}
-        <path d={sheetPath} fill="#ffffff" filter="url(#sheet-shadow)" />
+        <path d={sheetPath} fill={positive && isMaterial && !isPreview ? "#8a939e" : "#ffffff"} filter="url(#sheet-shadow)" />
         {view.grid && view.mode !== "material" && !isPreview && <path d={sheetPath} fill="url(#grid-major)" />}
 
         {/* Reference image overlay */}
@@ -648,7 +649,18 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
             {view.diff === "reference" ? null : view.diff === "overlap" ? (
               <path d={d.finalPath} fillRule="evenodd" fill="#2f7bb5" fillOpacity={0.45} stroke="#1f5f8f" strokeWidth={Math.max(0.12, px)} />
             ) : (
+              positive ? (
+              isMaterial ? (
+                <path d={d.materialPath} fillRule="evenodd" fill="#ffffff" stroke="none" />
+              ) : (
+                <>
+                  <path d={d.wastePath} fillRule="evenodd" fill="#111111" stroke="none" />
+                  <path d={d.finalPath} fillRule="evenodd" fill="none" stroke="#d84435" strokeWidth={Math.max(0.12, px)} />
+                </>
+              )
+            ) : (
               <path d={d.finalPath} fillRule="evenodd" fill={isMaterial ? bg : "#111111"} stroke={isMaterial ? "none" : "#d84435"} strokeWidth={Math.max(0.12, px)} />
+            )
             )}
             {d.elementPaths.map((ep) => {
               const active = selectedIds.has(ep.elementId) || ep.elementId === hoverEl || (hoverEl === null && ep.ringId === hoverRing) || (selection.kind === "ring" && ep.ringId === selRingId);
@@ -658,6 +670,8 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
         )}
 
         {view.showBridges && !isPreview && d.bridgePath && <path d={d.bridgePath} fill="#f6b26b" fillOpacity={0.8} stroke="#e08a2e" strokeWidth={px} pointerEvents="none" />}
+        {view.showBridges && !isPreview && d.connectorPath && <path d={d.connectorPath} fill="#8fc3a5" fillOpacity={0.85} stroke="#3f8f6b" strokeWidth={px} pointerEvents="none" data-testid="connectors" />}
+        {!isPreview && d.strayPath && <path d={d.strayPath} fill="#f7c6c0" fillOpacity={0.5} stroke="#d84435" strokeWidth={1.5 * px} strokeDasharray={`${3 * px} ${2 * px}`} pointerEvents="none" data-testid="stray" />}
 
         {view.showIssues && !isPreview && (
           <g pointerEvents="none">
@@ -779,10 +793,16 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
               ? "Difference View: 生成形状のみ"
               : "Difference View: 参照画像の上に生成形状（青）を重ねて表示"
           : view.mode === "design"
-            ? "デザイン表示: 要素ごとの形状（緑 = keep、赤 = 脱落する島）"
+            ? positive
+              ? "デザイン表示: 要素ごとの形状（緑 = コネクタ、赤破線 = 分離した部品）"
+              : "デザイン表示: 要素ごとの形状（緑 = keep、赤 = 脱落する島）"
             : view.mode === "material"
-              ? "材料ビュー: 残る材料が白、抜ける部分は背景色"
-              : "抜きビュー: レーザーで抜ける領域が黒（赤線 = カットライン）"}
+              ? positive
+                ? "材料ビュー（Positive）: 残る曼荼羅が白、除去される部分は背景色"
+                : "材料ビュー: 残る材料が白、抜ける部分は背景色"
+              : positive
+                ? "除去ビュー（Positive）: 除去される領域が黒、残る曼荼羅が白（赤線 = カットライン）"
+                : "抜きビュー: レーザーで抜ける領域が黒（赤線 = カットライン）"}
         {render.stale && <span className="ml-2 text-warn">計算中…</span>}
       </div>
       <div className={`pointer-events-none absolute bottom-3 left-8 hidden max-w-[calc(100%-360px)] truncate text-[10px] md:block ${isMaterial ? "text-white/70" : "text-ink-3"}`}>
