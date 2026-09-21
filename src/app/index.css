@@ -164,7 +164,115 @@ dialog::backdrop {
   .toolbar {
     height: 52px;
   }
-  .field-input {
+  /* Numeric field: slider bar with a filled track, big thumb, stepper buttons and a drag grip. */
+.num-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 26px;
+  margin: 0 0 2px;
+  background: transparent;
+  cursor: pointer;
+  touch-action: none;
+}
+.num-slider::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 4px;
+  background: linear-gradient(to right, var(--color-accent) 0, var(--color-accent) var(--pct, 0%), var(--color-line) var(--pct, 0%), var(--color-line) 100%);
+}
+.num-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 22px;
+  height: 22px;
+  margin-top: -7px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--color-accent);
+  box-shadow: 0 1px 3px rgba(20, 30, 40, 0.3);
+}
+.num-slider::-moz-range-track {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--color-line);
+}
+.num-slider::-moz-range-progress {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--color-accent);
+}
+.num-slider::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--color-accent);
+}
+.num-field {
+  height: 30px;
+  border: 1px solid var(--color-line);
+  border-radius: 6px;
+  background: var(--color-paper);
+  overflow: hidden;
+}
+.num-field:focus-within {
+  border-color: var(--color-select);
+}
+.num-grip {
+  width: 18px;
+  flex: none;
+  cursor: ew-resize;
+  color: var(--color-ink-3);
+  font-size: 9px;
+  letter-spacing: -2px;
+  background: var(--color-panel-2);
+  border-right: 1px solid var(--color-line-2);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.num-step {
+  width: 30px;
+  flex: none;
+  font-size: 15px;
+  color: var(--color-ink-2);
+  background: var(--color-panel);
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+.num-step:hover {
+  background: var(--color-select-bg);
+  color: var(--color-select);
+}
+.num-step:active {
+  background: var(--color-select);
+  color: #fff;
+}
+.num-input {
+  min-width: 0;
+  flex: 1 1 auto;
+  text-align: right;
+  padding: 0 6px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  border: none;
+  outline: none;
+  background: transparent;
+}
+@media (max-width: 860px) {
+  .num-field {
+    height: 36px;
+  }
+  .num-step {
+    width: 36px;
+    font-size: 17px;
+  }
+  .num-input {
+    font-size: 16px; /* iOS: no zoom-on-focus */
+  }
+}
+
+.field-input {
     min-height: 34px;
     font-size: 14px; /* iOS: ≥ 16px avoids zoom-on-focus; 14 keeps the layout, zoom is disabled via viewport */
   }

@@ -1,7 +1,8 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CanvasApi } from "../app/App";
 import { addElement, addRing, nextRing, setBezierPoint, updateElement, updateRing } from "../editor/commands";
-import { cubicsToPoints, fitClosedPolygon, fitCurve, simplifyPolyline } from "../import/bezier-fit";
+import { cubicsToPoints, fitClosedPolygon, fitCurve } from "../import/bezier-fit";
+import { conditionStroke, polylineLength } from "../geometry/stroke";
 import { newElement } from "../model/project";
 import { contourToPath } from "../editor/pipeline";
 import { useRenderState } from "../editor/render-context";
@@ -293,16 +294,17 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
    */
   const finishStroke = (raw: { x: number; y: number }[]): void => {
     if (raw.length < 3) return;
-    const eps = Math.max(0.15, 0.8 / v.scale);
-    const pts = simplifyPolyline(raw, eps);
-    let length = 0;
-    for (let i = 1; i < pts.length; i++) length += Math.hypot(pts[i]!.x - pts[i - 1]!.x, pts[i]!.y - pts[i - 1]!.y);
-    if (pts.length < 2 || length < 2) return;
-    const first = pts[0]!;
-    const last = pts[pts.length - 1]!;
+    const length = polylineLength(raw);
+    if (length < 2) return;
+    const first = raw[0]!;
+    const last = raw[raw.length - 1]!;
     const closed = length > 8 && Math.hypot(first.x - last.x, first.y - last.y) < Math.max(2.5, 12 / v.scale);
-    const err = Math.max(0.2, 1.2 / v.scale);
-    const bez = closed ? fitClosedPolygon(pts, err) : cubicsToPoints(fitCurve(pts, err));
+    // Smooth the pen samples (uniform resampling + Gaussian) so the fit yields a few
+    // gentle cubic segments instead of following every jitter of the hand.
+    const pts = conditionStroke(raw, closed, Math.max(0.35, Math.min(1, length / 60)));
+    if (pts.length < 2) return;
+    const err = Math.max(0.3, Math.min(0.8, length / 80));
+    const bez = closed ? fitClosedPolygon(pts, err, 75) : cubicsToPoints(fitCurve(pts, err));
     if (bez.length < 4) return;
     const cxw = pts.reduce((a, q) => a + q.x, 0) / pts.length;
     const cyw = pts.reduce((a, q) => a + q.y, 0) / pts.length;
@@ -767,7 +769,7 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
           +
         </button>
       </div>
-      <div className="absolute left-8 top-8 hidden rounded bg-paper/85 px-2 py-1 text-[11px] text-ink-2 shadow-sm md:block">
+      <div className="pointer-events-none absolute left-8 top-8 hidden max-w-[70%] rounded bg-paper/85 px-2 py-1 text-[11px] text-ink-2 shadow-sm md:block">
         {isPreview
           ? `加工プレビュー: 書き出される SVG と同じカットライン（赤・${d.exportSubpaths} パス）。ブリッジは線の切れ目として含まれています`
           : view.diff !== "off" && reference
@@ -783,7 +785,7 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
               : "抜きビュー: レーザーで抜ける領域が黒（赤線 = カットライン）"}
         {render.stale && <span className="ml-2 text-warn">計算中…</span>}
       </div>
-      <div className={`absolute bottom-3 left-8 hidden text-[10px] md:block ${isMaterial ? "text-white/70" : "text-ink-3"}`}>
+      <div className={`pointer-events-none absolute bottom-3 left-8 hidden max-w-[calc(100%-360px)] truncate text-[10px] md:block ${isMaterial ? "text-white/70" : "text-ink-3"}`}>
         ドラッグ: 範囲選択（Alt / Space / 中ボタン: パン） · Shift+クリック: 追加選択 · 右クリック: メニュー · {wheelZoom ? "ホイール: ズーム" : "ホイール: スクロール（⌘/Ctrl でズーム）"} · 矢印 / [ ]: 移動・回転
       </div>
     </div>

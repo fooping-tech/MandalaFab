@@ -1,4 +1,5 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import type React from "react";
 
 interface NumberFieldProps {
   label: string;
@@ -12,48 +13,155 @@ interface NumberFieldProps {
   title?: string;
 }
 
-/** Numeric input with optional slider. Commits each change (the store coalesces rapid edits). */
+/**
+ * Numeric input made for touch as well as the keyboard:
+ *  - a visible slider bar (when min / max are given) that can be dragged,
+ *  - ▼ / ▲ stepper buttons (hold to repeat, Shift = 10 steps),
+ *  - dragging sideways on the grip left of the number nudges the value,
+ *  - the number itself can still be typed.
+ * Commits each change (the store coalesces rapid edits).
+ */
 export function NumberField({ label, value, onChange, min, max, step = 1, unit, slider = true, title }: NumberFieldProps) {
   const [text, setText] = useState(String(value));
   useEffect(() => setText(String(value)), [value]);
+  const decimals = Math.max(0, Math.min(4, (String(step).split(".")[1] ?? "").length));
+  const clamp = (n: number): number => {
+    let v = n;
+    if (min !== undefined) v = Math.max(min, v);
+    if (max !== undefined) v = Math.min(max, v);
+    return Number(v.toFixed(decimals));
+  };
   const commit = (raw: string): void => {
     const n = Number(raw);
     if (!Number.isFinite(n)) {
       setText(String(value));
       return;
     }
-    let v = n;
-    if (min !== undefined) v = Math.max(min, v);
-    if (max !== undefined) v = Math.min(max, v);
+    const v = clamp(n);
     if (v !== value) onChange(v);
     setText(String(v));
   };
+  const nudge = (dir: number, big: boolean): void => {
+    const v = clamp(value + dir * step * (big ? 10 : 1));
+    if (v !== value) onChange(v);
+  };
+  // Hold-to-repeat for the stepper buttons.
+  const repeat = useRef<{ t: number; i: number } | null>(null);
+  const stopRepeat = (): void => {
+    if (!repeat.current) return;
+    window.clearTimeout(repeat.current.t);
+    window.clearInterval(repeat.current.i);
+    repeat.current = null;
+  };
+  const startRepeat = (dir: number, big: boolean): void => {
+    stopRepeat();
+    nudge(dir, big);
+    const t = window.setTimeout(() => {
+      const i = window.setInterval(() => nudge(dir, big), 60);
+      repeat.current = { t, i };
+    }, 400);
+    repeat.current = { t, i: 0 };
+  };
+  useEffect(() => stopRepeat, []);
+  // Drag on the grip: 1 step per 6 px (Shift: 10 steps).
+  const dragRef = useRef<{ x: number; base: number; acc: number } | null>(null);
+  const onGripDown = (e: React.PointerEvent<HTMLButtonElement>): void => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      /* synthetic */
+    }
+    dragRef.current = { x: e.clientX, base: value, acc: 0 };
+  };
+  const onGripMove = (e: React.PointerEvent<HTMLButtonElement>): void => {
+    const d = dragRef.current;
+    if (!d) return;
+    const steps = Math.trunc((e.clientX - d.x) / 6) * (e.shiftKey ? 10 : 1);
+    const v = clamp(d.base + steps * step);
+    if (v !== value) onChange(v);
+  };
+  const onGripUp = (): void => {
+    dragRef.current = null;
+  };
+  const hasSlider = slider && min !== undefined && max !== undefined;
+  const pct = hasSlider ? Math.max(0, Math.min(100, ((value - min!) / Math.max(1e-9, max! - min!)) * 100)) : 0;
   return (
-    <label className="block" title={title}>
+    <div className="block" title={title}>
       <span className="mb-0.5 flex items-center justify-between text-[11px] text-ink-2">
         <span>{label}</span>
         {unit && <span className="text-ink-3">{unit}</span>}
       </span>
-      <span className="flex items-center gap-2">
-        {slider && min !== undefined && max !== undefined && (
-          <input type="range" className="min-w-0 flex-1" min={min} max={max} step={step} value={Math.min(max, Math.max(min, value))} onChange={(e) => onChange(Number(e.target.value))} />
-        )}
+      {hasSlider && (
         <input
-          type="number"
-          className="field-input w-[74px] shrink-0 text-right font-mono tabular-nums"
-          value={text}
+          type="range"
+          className="num-slider block w-full"
+          style={{ "--pct": `${pct}%` } as React.CSSProperties}
           min={min}
           max={max}
           step={step}
+          value={Math.min(max!, Math.max(min!, value))}
+          onChange={(e) => onChange(Number(e.target.value))}
+          aria-label={label}
+        />
+      )}
+      <span className="num-field flex items-stretch">
+        <button type="button" className="num-grip" title="左右にドラッグで数値を変更（Shift で 10 倍）" aria-label="ドラッグで変更" onPointerDown={onGripDown} onPointerMove={onGripMove} onPointerUp={onGripUp} onPointerCancel={onGripUp}>
+          ⋮⋮
+        </button>
+        <button
+          type="button"
+          className="num-step"
+          aria-label="減らす"
+          onPointerDown={(e) => {
+            e.preventDefault();
+            startRepeat(-1, e.shiftKey);
+          }}
+          onPointerUp={stopRepeat}
+          onPointerLeave={stopRepeat}
+          onPointerCancel={stopRepeat}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          −
+        </button>
+        <input
+          type="text"
+          inputMode="decimal"
+          className="num-input"
+          value={text}
           onChange={(e) => setText(e.target.value)}
           onBlur={(e) => commit(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") commit((e.target as HTMLInputElement).value);
-            if (e.key === "Escape") setText(String(value));
+            else if (e.key === "Escape") setText(String(value));
+            else if (e.key === "ArrowUp") {
+              e.preventDefault();
+              nudge(1, e.shiftKey);
+            } else if (e.key === "ArrowDown") {
+              e.preventDefault();
+              nudge(-1, e.shiftKey);
+            }
           }}
+          aria-label={label}
         />
+        <button
+          type="button"
+          className="num-step"
+          aria-label="増やす"
+          onPointerDown={(e) => {
+            e.preventDefault();
+            startRepeat(1, e.shiftKey);
+          }}
+          onPointerUp={stopRepeat}
+          onPointerLeave={stopRepeat}
+          onPointerCancel={stopRepeat}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          ＋
+        </button>
       </span>
-    </label>
+    </div>
   );
 }
 
