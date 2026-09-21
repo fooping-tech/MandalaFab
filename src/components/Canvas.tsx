@@ -11,6 +11,7 @@ import { applyTransform, invertTransform, pointAngleDeg } from "../geometry/radi
 import { sheetContour } from "../geometry/stencil/sheet";
 import { CENTER_ID } from "../geometry/radial/mandala";
 import { publishCursor, publishZoom } from "./StatusBar";
+import { useCoarsePointer } from "../app/use-media";
 
 interface View {
   cx: number;
@@ -31,9 +32,9 @@ function niceStep(scale: number, px: number): number {
 
 type HandleKind = "origin" | "rotate" | "length" | "width" | "ring-radius" | number;
 type DragState =
-  | { kind: "pan"; x: number; y: number; cx: number; cy: number; moved: boolean }
+  | { kind: "pan"; x: number; y: number; cx: number; cy: number; moved: boolean; hitRing: string | null; hitElement: string | null }
   | { kind: "handle"; ringId: string; elementId: string | null; handle: HandleKind; moved: boolean }
-  | { kind: "marquee"; sx: number; sy: number; x0: number; y0: number; x1: number; y1: number; shift: boolean; moved: boolean };
+  | { kind: "marquee"; sx: number; sy: number; x0: number; y0: number; x1: number; y1: number; shift: boolean; moved: boolean; hitRing: string | null; hitElement: string | null };
 
 const WHEEL_KEY = "mandalafab-wheel-zoom";
 function loadWheelZoom(): boolean {
@@ -59,7 +60,8 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
   const focusedIssue = useEditor((s) => s.focusedIssueId);
   const reference = useEditor((s) => s.reference);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const [size, setSize] = useState({ w: 800, h: 600 });
+  // 0 until measured, so the first fit uses the real viewport (phones are much narrower than the default).
+  const [size, setSize] = useState({ w: 0, h: 0 });
   const [v, setV] = useState<View>({ cx: 0, cy: 0, scale: 3 });
   const drag = useRef<DragState | null>(null);
   const [wheelZoom, setWheelZoom] = useState(loadWheelZoom);
@@ -68,11 +70,19 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
   const onEnter = useCallback((r: string, e: string) => store.hover(r, e), [store]);
   const onLeave = useCallback(() => store.hover(null), [store]);
   const pinch = useRef<Map<number, { x: number; y: number }>>(new Map());
-  const pinchStart = useRef<{ dist: number; scale: number } | null>(null);
+  const pinchStart = useRef<{ dist: number; scale: number; mid: { x: number; y: number }; cx: number; cy: number } | null>(null);
   const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const [menu, setMenu] = useState<MenuAnchor | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
   const spaceDown = useRef(false);
+  const coarse = useCoarsePointer();
+  /** Touch: one-finger drag selects a rectangle instead of panning. */
+  const [boxSelect, setBoxSelect] = useState(false);
+  const longPress = useRef<{ timer: number; x: number; y: number; pointerId: number } | null>(null);
+  const cancelLongPress = (): void => {
+    if (longPress.current) window.clearTimeout(longPress.current.timer);
+    longPress.current = null;
+  };
   const selectedIds = useMemo(() => new Set(selectedItems(selection).map((i) => i.elementId)), [selection]);
 
   // Space held = pan with the left button (like most vector editors).
@@ -181,13 +191,41 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
 
   const onPointerDown = (e: React.PointerEvent): void => {
     if (e.button !== 0 && e.button !== 1) return;
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      /* synthetic events have no active pointer */
+    }
     pinch.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pinch.current.size === 2) {
       const [a, b] = [...pinch.current.values()];
-      pinchStart.current = { dist: Math.hypot(a!.x - b!.x, a!.y - b!.y), scale: v.scale };
+      pinchStart.current = { dist: Math.hypot(a!.x - b!.x, a!.y - b!.y), scale: v.scale, mid: { x: (a!.x + b!.x) / 2, y: (a!.y + b!.y) / 2 }, cx: v.cx, cy: v.cy };
       drag.current = null;
+      cancelLongPress();
+      setMarquee(null);
       return;
+    }
+    // Touch: long-press opens the context menu (there is no right button).
+    if (e.pointerType === "touch" && e.button === 0 && !isPreview) {
+      cancelLongPress();
+      const x = e.clientX, y = e.clientY, pointerId = e.pointerId;
+      longPress.current = {
+        pointerId,
+        x,
+        y,
+        timer: window.setTimeout(() => {
+          longPress.current = null;
+          drag.current = null;
+          setMarquee(null);
+          const el = document.elementFromPoint(x, y);
+          const ringId = el?.getAttribute?.("data-ring");
+          const elementId = el?.getAttribute?.("data-element");
+          if (ringId === CENTER_ID) store.select({ kind: "center" });
+          else if (ringId && elementId && !selectedIds.has(elementId)) store.select({ kind: "element", ringId, elementId });
+          else if (ringId && !elementId) store.select({ kind: "ring", ringId });
+          setMenu({ x, y });
+        }, 550),
+      };
     }
     const target = e.target as Element;
     const handle = target.getAttribute?.("data-handle");
@@ -199,14 +237,17 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
       }
     }
     // Left-drag from empty space = marquee selection. Pan with the middle button, Alt, Space, touch, or from a shape.
-    const onShape = !!target.getAttribute?.("data-ring");
-    const panMode = e.button === 1 || e.altKey || spaceDown.current || e.pointerType === "touch" || onShape || isPreview;
+    // Remember what was under the pointer: pointer capture retargets pointerup to the svg.
+    const hitRing = target.getAttribute?.("data-ring") ?? null;
+    const hitElement = target.getAttribute?.("data-element") ?? null;
+    const onShape = !!hitRing;
+    const panMode = e.button === 1 || e.altKey || spaceDown.current || (e.pointerType === "touch" && !boxSelect) || onShape || isPreview;
     if (!panMode) {
       const p = toDesign(e.clientX, e.clientY);
-      drag.current = { kind: "marquee", sx: e.clientX, sy: e.clientY, x0: p.x, y0: p.y, x1: p.x, y1: p.y, shift: e.shiftKey, moved: false };
+      drag.current = { kind: "marquee", sx: e.clientX, sy: e.clientY, x0: p.x, y0: p.y, x1: p.x, y1: p.y, shift: e.shiftKey, moved: false, hitRing, hitElement };
       return;
     }
-    drag.current = { kind: "pan", x: e.clientX, y: e.clientY, cx: v.cx, cy: v.cy, moved: false };
+    drag.current = { kind: "pan", x: e.clientX, y: e.clientY, cx: v.cx, cy: v.cy, moved: false, hitRing, hitElement };
   };
 
   /** Elements whose copies touch the rectangle (design mm). */
@@ -238,10 +279,14 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
     if (pinch.current.size === 2 && pinchStart.current) {
       const [a, b] = [...pinch.current.values()];
       const d = Math.hypot(a!.x - b!.x, a!.y - b!.y);
-      const scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, (pinchStart.current.scale * d) / Math.max(1, pinchStart.current.dist)));
-      setV((old) => ({ ...old, scale }));
+      const ps = pinchStart.current;
+      const scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, (ps.scale * d) / Math.max(1, ps.dist)));
+      // Two-finger drag pans by the midpoint movement (in mm at the new scale).
+      const mid = { x: (a!.x + b!.x) / 2, y: (a!.y + b!.y) / 2 };
+      setV({ scale, cx: ps.cx - (mid.x - ps.mid.x) / scale, cy: ps.cy - (mid.y - ps.mid.y) / scale });
       return;
     }
+    if (longPress.current && longPress.current.pointerId === e.pointerId && Math.hypot(e.clientX - longPress.current.x, e.clientY - longPress.current.y) > 8) cancelLongPress();
     const p = toDesign(e.clientX, e.clientY);
     publishCursor({ x: p.x, y: p.y, r: Math.hypot(p.x, p.y), angle: ((pointAngleDeg(p) % 360) + 360) % 360 });
     const d = drag.current;
@@ -300,6 +345,7 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
     setV((old) => ({ ...old, cx: d.cx - dx / old.scale, cy: d.cy - dy / old.scale }));
   };
   const onPointerUp = (e: React.PointerEvent): void => {
+    if (longPress.current && longPress.current.pointerId === e.pointerId) cancelLongPress();
     pinch.current.delete(e.pointerId);
     if (pinch.current.size < 2) pinchStart.current = null;
     const d = drag.current;
@@ -313,9 +359,8 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
       }
     }
     if (d && (d.kind === "pan" || d.kind === "marquee") && !d.moved && e.button === 0) {
-      const target = e.target as Element;
-      const ringId = target.getAttribute?.("data-ring");
-      const elementId = target.getAttribute?.("data-element");
+      const ringId = d.hitRing;
+      const elementId = d.hitElement;
       const additive = e.shiftKey || e.metaKey || e.ctrlKey;
       if (ringId === CENTER_ID) store.select({ kind: "center" });
       else if (ringId && elementId && additive) store.toggleSelect(ringId, elementId);
@@ -342,6 +387,8 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
     return out;
   };
   const px = 1 / v.scale;
+  /** Handle size unit: bigger targets on touch screens. */
+  const hp = px * (coarse ? 1.8 : 1);
   const guideR = Math.max(sheetW, sheetH) * 0.75;
   const d = render.data;
   const errorIssues = d.issuePaths.filter((i) => i.severity === "error");
@@ -540,24 +587,24 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
             )}
             {handles.points.map((p, i) => {
               const anchor = i % 3 === 0;
-              return <circle key={i} data-handle={i} cx={p.x} cy={p.y} r={(anchor ? 5 : 4) * px} fill={anchor ? "#1f7ac0" : "#ffffff"} stroke="#1f7ac0" strokeWidth={1.2 * px} style={{ cursor: "move" }} aria-label={anchor ? "アンカーポイント" : "制御点"} />;
+              return <circle key={i} data-handle={i} cx={p.x} cy={p.y} r={(anchor ? 5 : 4) * px} fill={anchor ? "#1f7ac0" : "#ffffff"} stroke="#1f7ac0" strokeWidth={1.2 * hp} style={{ cursor: "move" }} aria-label={anchor ? "アンカーポイント" : "制御点"} />;
             })}
             {selEl && selEl.type !== "bezier" && selEl.type !== "connector" && selEl.type !== "compound" && (
               <>
                 <line x1={handles.origin.x} y1={handles.origin.y} x2={handles.widthTip.x} y2={handles.widthTip.y} stroke="#2f7bb5" strokeWidth={px} strokeDasharray={`${3 * px} ${3 * px}`} pointerEvents="none" />
-                <rect data-handle="length" x={handles.axisTip.x - 4 * px} y={handles.axisTip.y - 4 * px} width={8 * px} height={8 * px} fill="#2f7bb5" stroke="#ffffff" strokeWidth={px} style={{ cursor: "ew-resize" }} aria-label="長さ" />
-                <rect data-handle="width" x={handles.widthTip.x - 4 * px} y={handles.widthTip.y - 4 * px} width={8 * px} height={8 * px} fill="#2f7bb5" stroke="#ffffff" strokeWidth={px} style={{ cursor: "ns-resize" }} aria-label="幅" />
+                <rect data-handle="length" x={handles.axisTip.x - 4 * hp} y={handles.axisTip.y - 4 * hp} width={8 * hp} height={8 * hp} fill="#2f7bb5" stroke="#ffffff" strokeWidth={px} style={{ cursor: "ew-resize" }} aria-label="長さ" />
+                <rect data-handle="width" x={handles.widthTip.x - 4 * hp} y={handles.widthTip.y - 4 * hp} width={8 * hp} height={8 * hp} fill="#2f7bb5" stroke="#ffffff" strokeWidth={px} style={{ cursor: "ns-resize" }} aria-label="幅" />
               </>
             )}
             <line x1={handles.axisTip.x} y1={handles.axisTip.y} x2={handles.rotateTip.x} y2={handles.rotateTip.y} stroke="#c8793f" strokeWidth={px} pointerEvents="none" />
-            <circle data-handle="rotate" cx={handles.rotateTip.x} cy={handles.rotateTip.y} r={5.5 * px} fill="#ffffff" stroke="#c8793f" strokeWidth={1.4 * px} style={{ cursor: "grab" }} aria-label="回転（Shift で 15° 刻み）" />
-            <rect data-handle="origin" x={handles.origin.x - 5 * px} y={handles.origin.y - 5 * px} width={10 * px} height={10 * px} fill="#ffffff" stroke="#2f7bb5" strokeWidth={1.2 * px} style={{ cursor: "move" }} aria-label="要素の位置" />
+            <circle data-handle="rotate" cx={handles.rotateTip.x} cy={handles.rotateTip.y} r={5.5 * hp} fill="#ffffff" stroke="#c8793f" strokeWidth={1.4 * hp} style={{ cursor: "grab" }} aria-label="回転（Shift で 15° 刻み）" />
+            <rect data-handle="origin" x={handles.origin.x - 5 * hp} y={handles.origin.y - 5 * hp} width={10 * hp} height={10 * hp} fill="#ffffff" stroke="#2f7bb5" strokeWidth={1.2 * hp} style={{ cursor: "move" }} aria-label="要素の位置" />
           </g>
         )}
         {ringHandle && !isPreview && (
           <g>
             <line x1={0} y1={0} x2={ringHandle.x} y2={ringHandle.y} stroke="#2f7bb5" strokeWidth={px} strokeDasharray={`${3 * px} ${3 * px}`} pointerEvents="none" />
-            <circle data-handle="ring-radius" cx={ringHandle.x} cy={ringHandle.y} r={6 * px} fill="#ffffff" stroke="#2f7bb5" strokeWidth={1.4 * px} style={{ cursor: "move" }} aria-label="リングの半径" />
+            <circle data-handle="ring-radius" cx={ringHandle.x} cy={ringHandle.y} r={6 * hp} fill="#ffffff" stroke="#2f7bb5" strokeWidth={1.4 * hp} style={{ cursor: "move" }} aria-label="リングの半径" />
           </g>
         )}
 
@@ -586,6 +633,12 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
 
       <ContextMenu store={store} at={menu} onClose={closeMenu} fit={fit} />
       <div className="absolute bottom-3 right-3 flex items-center gap-1">
+        {coarse && (
+          <button type="button" className={`canvas-btn text-[10px] ${boxSelect ? "border-select text-select" : ""}`} onClick={() => setBoxSelect((b) => !b)} title="1 本指ドラッグを範囲選択にする（オフでパン）" data-testid="box-select">
+            {boxSelect ? "⬚ 範囲選択: ON" : "⬚ 範囲選択"}
+          </button>
+        )}
+        {!coarse && (
         <button
           type="button"
           className={`canvas-btn text-[10px] ${wheelZoom ? "" : "opacity-70"}`}
@@ -602,6 +655,7 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
         >
           {wheelZoom ? "ホイール: ズーム" : "ホイール: スクロール"}
         </button>
+        )}
         <button type="button" className="canvas-btn" onClick={() => zoomAt(1 / 1.25)} title="縮小">
           −
         </button>
@@ -612,7 +666,7 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
           +
         </button>
       </div>
-      <div className="absolute left-8 top-8 rounded bg-paper/85 px-2 py-1 text-[11px] text-ink-2 shadow-sm">
+      <div className="absolute left-8 top-8 hidden rounded bg-paper/85 px-2 py-1 text-[11px] text-ink-2 shadow-sm md:block">
         {isPreview
           ? `加工プレビュー: 書き出される SVG と同じカットライン（赤・${d.exportSubpaths} パス）。ブリッジは線の切れ目として含まれています`
           : view.diff !== "off" && reference
@@ -628,7 +682,7 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
               : "抜きビュー: レーザーで抜ける領域が黒（赤線 = カットライン）"}
         {render.stale && <span className="ml-2 text-warn">計算中…</span>}
       </div>
-      <div className={`absolute bottom-3 left-8 text-[10px] ${isMaterial ? "text-white/70" : "text-ink-3"}`}>
+      <div className={`absolute bottom-3 left-8 hidden text-[10px] md:block ${isMaterial ? "text-white/70" : "text-ink-3"}`}>
         ドラッグ: 範囲選択（Alt / Space / 中ボタン: パン） · Shift+クリック: 追加選択 · 右クリック: メニュー · {wheelZoom ? "ホイール: ズーム" : "ホイール: スクロール（⌘/Ctrl でズーム）"} · 矢印 / [ ]: 移動・回転
       </div>
     </div>

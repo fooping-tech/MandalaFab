@@ -12,7 +12,7 @@ interface Props {
 
 function Btn({ icon, label, onClick, active, disabled, primary, title }: { icon: string; label: string; onClick: () => void; active?: boolean; disabled?: boolean; primary?: boolean; title?: string }) {
   return (
-    <button type="button" className={`tool-btn ${active ? "active" : ""} ${primary ? "primary" : ""}`} onClick={onClick} disabled={disabled} title={title ?? label}>
+    <button type="button" className={`tool-btn shrink-0 ${active ? "active" : ""} ${primary ? "primary" : ""}`} onClick={onClick} disabled={disabled} title={title ?? label}>
       <span className="icon" aria-hidden="true">
         {icon}
       </span>
@@ -21,7 +21,7 @@ function Btn({ icon, label, onClick, active, disabled, primary, title }: { icon:
   );
 }
 
-const Sep = () => <div className="mx-1 h-9 w-px self-center bg-line" />;
+const Sep = () => <div className="mx-1 h-9 w-px shrink-0 self-center bg-line" />;
 
 export function Toolbar({ store, openDialog, canvasApi }: Props) {
   const canUndo = useEditor((s) => s.canUndo);
@@ -30,10 +30,10 @@ export function Toolbar({ store, openDialog, canvasApi }: Props) {
   const name = useEditor((s) => s.project.name);
   const render = useRenderState();
   return (
-    <header className="flex h-[64px] shrink-0 items-center gap-0.5 border-b border-line bg-panel px-2">
-      <div className="mr-3 flex items-center gap-2 pl-1">
+    <header className="toolbar flex h-[64px] shrink-0 items-center gap-0.5 border-b border-line bg-panel px-2">
+      <div className="mr-1 flex shrink-0 items-center gap-2 pl-1 md:mr-3">
         <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" className="h-8 w-8" />
-        <div className="leading-tight">
+        <div className="hidden leading-tight md:block">
           <div className="text-[14px] font-semibold tracking-wide">MandalaFab</div>
           <div className="text-[10px] text-ink-3">曼荼羅ステンシル CAD · v{APP_VERSION}</div>
         </div>
@@ -65,7 +65,7 @@ export function Toolbar({ store, openDialog, canvasApi }: Props) {
       <Btn icon="⊖" label="縮小" onClick={() => canvasApi?.zoomBy(1 / 1.25)} />
       <Btn icon="⛶" label="全体" onClick={() => canvasApi?.fit()} title="全体表示 (F)" />
       <div className="flex-1" />
-      <div className="mr-2 max-w-[200px] truncate text-[12px] text-ink-2" title={name}>
+      <div className="mr-2 hidden max-w-[200px] truncate text-[12px] text-ink-2 lg:block" title={name}>
         {name}
       </div>
       <Btn icon="⇪" label="共有URL" onClick={() => openDialog("share")} />

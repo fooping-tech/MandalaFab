@@ -48,22 +48,22 @@ export function StatusBar({ store }: { store: EditorStore }) {
   const kindClass = message?.kind === "error" ? "text-error" : message?.kind === "success" ? "text-ok" : "text-ink-2";
 
   return (
-    <footer className="flex h-[30px] shrink-0 items-center gap-4 border-t border-line bg-panel px-3 text-[11px] text-ink-2">
+    <footer className="flex h-[30px] shrink-0 items-center gap-2 border-t border-line bg-panel px-2 text-[11px] text-ink-2 sm:gap-4 sm:px-3">
       <div className={`min-w-0 flex-1 truncate ${kindClass}`} role="status" aria-live="polite">
         {render.error ? <span className="text-error">計算エラー: {render.error}</span> : visible && message ? message.text : "ブラウザ内で編集 · 単位 mm · 中心が原点"}
       </div>
-      <div className="font-mono tabular-nums">{cursor ? `X ${cursor.x.toFixed(2)}  Y ${cursor.y.toFixed(2)}  r ${cursor.r.toFixed(2)}  θ ${cursor.angle.toFixed(1)}°` : "X —  Y —"}</div>
-      <div className="flex items-center gap-3 tabular-nums">
+      <div className="hidden font-mono tabular-nums lg:block">{cursor ? `X ${cursor.x.toFixed(2)}  Y ${cursor.y.toFixed(2)}  r ${cursor.r.toFixed(2)}  θ ${cursor.angle.toFixed(1)}°` : "X —  Y —"}</div>
+      <div className="flex shrink-0 items-center gap-2 tabular-nums sm:gap-3">
         <span title="書き出されるパス数（subpath）">パス {d.counts.subpaths}</span>
         <span title="ブリッジ数">ブリッジ {d.counts.bridges}</span>
         {v && <span title="カット線の総延長">カット {v.stats.cutLength >= 1000 ? `${(v.stats.cutLength / 1000).toFixed(2)} m` : `${v.stats.cutLength.toFixed(0)} mm`}</span>}
         <span className={render.validating ? "text-ink-3" : errors > 0 ? "text-error" : warnings > 0 ? "text-warn" : "text-ok"} title="検証結果">
           {render.validating ? "検証中…" : errors > 0 ? `✕ ${errors} エラー` : warnings > 0 ? `△ ${warnings} 警告` : "✓ 問題なし"}
         </span>
-        <span className={render.stale ? "text-warn" : "text-ink-3"} title="ジオメトリ / 検証 の計算時間">
+        <span className={`hidden md:inline ${render.stale ? "text-warn" : "text-ink-3"}`} title="ジオメトリ / 検証 の計算時間">
           {render.stale ? "計算中…" : `${d.computeMs.toFixed(0)} + ${d.validationMs.toFixed(0)} ms`}
         </span>
-        <span>{Math.round(zoom * 100)}%</span>
+        <span className="hidden sm:inline">{Math.round(zoom * 100)}%</span>
       </div>
       <button type="button" className="text-ink-3 hover:text-ink" onClick={() => store.notify("検証結果は形状上の問題の検出であり、材料強度や完全性を保証するものではありません。")}>
         ⓘ

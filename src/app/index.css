@@ -30,6 +30,11 @@ body,
   height: 100%;
   margin: 0;
 }
+@supports (height: 100dvh) {
+  #root {
+    height: 100dvh;
+  }
+}
 
 body {
   font-family: var(--font-sans);
@@ -98,7 +103,8 @@ dialog {
   color: var(--color-ink);
   background: var(--color-paper);
   box-shadow: 0 18px 60px rgba(30, 45, 60, 0.25);
-  max-width: min(92vw, 720px);
+  max-width: calc(100vw - 16px);
+  max-height: calc(100dvh - 16px);
 }
 dialog::backdrop {
   background: rgba(30, 40, 50, 0.35);
@@ -132,6 +138,56 @@ dialog::backdrop {
 }
 .tool-btn.primary:hover {
   background: var(--color-accent-2);
+}
+
+/* Phone layout: icon-only toolbar that scrolls sideways, bottom bar with safe area. */
+@media (max-width: 860px) {
+  .tool-btn {
+    min-width: 44px;
+    height: 44px;
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+  .tool-btn .icon {
+    font-size: 19px;
+  }
+  .tool-btn > span:not(.icon) {
+    display: none;
+  }
+  .toolbar {
+    height: 52px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .toolbar::-webkit-scrollbar {
+    display: none;
+  }
+  .field-input {
+    min-height: 34px;
+    font-size: 14px; /* iOS: ≥ 16px avoids zoom-on-focus; 14 keeps the layout, zoom is disabled via viewport */
+  }
+  input[type="range"] {
+    height: 28px;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    width: 18px;
+    height: 18px;
+    margin-top: -7.5px;
+  }
+}
+.mobile-bar {
+  min-height: 50px;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.mobile-sheet {
+  box-shadow: 0 -8px 30px rgba(20, 30, 40, 0.22);
+}
+.mobile-sheet > .sheet-body > aside {
+  flex: 1 1 auto;
+  min-height: 0;
+  border: none;
 }
 
 .field-input {

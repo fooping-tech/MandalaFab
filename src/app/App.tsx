@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { useIsMobile } from "./use-media";
+import { MobileBar, type MobilePanel } from "../components/MobileBar";
 import { Toolbar } from "../components/Toolbar";
 import { RingTree } from "../components/RingTree";
 import { Canvas } from "../components/Canvas";
@@ -30,6 +32,8 @@ export function App({ store }: { store: EditorStore }) {
   const render = useRender(project);
   const [dialog, setDialog] = useState<DialogName>(null);
   const [canvasApi, setCanvasApi] = useState<CanvasApi | null>(null);
+  const mobile = useIsMobile();
+  const [panel, setPanel] = useState<MobilePanel>(null);
 
   useEffect(() => saveLocal(project), [project]);
 
@@ -125,12 +129,36 @@ export function App({ store }: { store: EditorStore }) {
     <RenderContext.Provider value={render}>
       <div className="flex h-full flex-col overflow-hidden">
         <Toolbar store={store} openDialog={setDialog} canvasApi={canvasApi} />
-        <main className="grid min-h-0 flex-1 grid-cols-[260px_minmax(400px,1fr)_330px]">
-          <RingTree store={store} />
-          <Canvas store={store} onApi={setCanvasApi} />
-          <Inspector store={store} />
-        </main>
-        <StatusBar store={store} />
+        {mobile ? (
+          <>
+            <main className="relative min-h-0 flex-1">
+              <div className="absolute inset-0 flex flex-col [&>div]:min-h-0 [&>div]:flex-1">
+                <Canvas store={store} onApi={setCanvasApi} />
+              </div>
+              {panel && (
+                <div className="mobile-sheet absolute inset-x-0 bottom-0 z-20 flex h-[62%] flex-col rounded-t-xl border-t border-line bg-panel" data-testid="mobile-sheet">
+                  <div className="flex items-center justify-between border-b border-line px-3 py-1">
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-2">{panel === "tree" ? "Mandala Tree" : "Inspector"}</span>
+                    <button type="button" className="rounded px-2 py-1 text-[13px] text-ink-3 hover:text-ink" onClick={() => setPanel(null)} aria-label="閉じる">
+                      ✕
+                    </button>
+                  </div>
+                  <div className="sheet-body flex min-h-0 flex-1 flex-col">{panel === "tree" ? <RingTree store={store} /> : <Inspector store={store} />}</div>
+                </div>
+              )}
+            </main>
+            <MobileBar store={store} panel={panel} setPanel={setPanel} canvasApi={canvasApi} />
+          </>
+        ) : (
+          <>
+            <main className="grid min-h-0 flex-1 grid-cols-[260px_minmax(400px,1fr)_330px]">
+              <RingTree store={store} />
+              <Canvas store={store} onApi={setCanvasApi} />
+              <Inspector store={store} />
+            </main>
+            <StatusBar store={store} />
+          </>
+        )}
       </div>
       <GenerateDialog store={store} open={dialog === "generate"} onClose={() => setDialog(null)} />
       <PresetDialog store={store} open={dialog === "presets" || dialog === "parts"} tab={dialog === "parts" ? "parts" : "builtin"} onClose={() => setDialog(null)} />

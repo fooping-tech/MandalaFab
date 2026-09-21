@@ -9,7 +9,7 @@ export function Dialog({ open, onClose, title, children, width = 560 }: { open: 
     if (!open && el.open) el.close();
   }, [open]);
   return (
-    <dialog ref={ref} onClose={onClose} onClick={(e) => e.target === ref.current && onClose()} style={{ width }}>
+    <dialog ref={ref} onClose={onClose} onClick={(e) => e.target === ref.current && onClose()} style={{ width: `min(${width}px, calc(100vw - 16px))` }}>
       <div className="fadein" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-line px-5 py-3">
           <h2 className="text-[14px] font-semibold">{title}</h2>
@@ -17,7 +17,7 @@ export function Dialog({ open, onClose, title, children, width = 560 }: { open: 
             ✕
           </button>
         </div>
-        <div className="max-h-[70vh] overflow-auto px-5 py-4">{children}</div>
+        <div className="max-h-[calc(100dvh-90px)] overflow-auto px-4 py-3 sm:px-5 sm:py-4">{children}</div>
       </div>
     </dialog>
   );

@@ -402,7 +402,7 @@ export function ImportReferenceDialog({ store, onClose }: { store: EditorStore; 
 
   return (
     <Dialog open onClose={onClose} title="参照画像のインポート（Import Reference）" width={1100}>
-      <div className="grid grid-cols-[1fr_320px] gap-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_320px]">
         <div>
           <ol className="mb-3 flex flex-wrap gap-1 text-[11px]">
             {STEPS.map((s, i) => (
