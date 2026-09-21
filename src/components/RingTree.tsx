@@ -1,6 +1,7 @@
+import type React from "react";
 import { actionAddElement, actionAddRing } from "../editor/actions";
 import { duplicateElement, duplicateRing, moveElement, moveRing, removeElement, removeRing, updateElement, updateRing } from "../editor/commands";
-import { useEditor, type EditorStore } from "../editor/store";
+import { selectedItems, useEditor, type EditorStore } from "../editor/store";
 import { ELEMENT_TYPES, type ElementType, type OrnamentRole, type SectorElement } from "../model/project";
 
 const ROLE_BADGE: Record<OrnamentRole, string> = { primary: "P", secondary: "S", flow: "F", filler: "·", boundary: "B" };
@@ -43,8 +44,13 @@ export function RingTree({ store }: { store: EditorStore }) {
   const hoverEl = useEditor((s) => s.hoverElementId);
   const name = useEditor((s) => s.project.name);
   const symmetry = useEditor((s) => s.project.symmetry);
-  const selRing = selection.kind === "ring" || selection.kind === "element" ? selection.ringId : null;
-  const selEl = selection.kind === "element" ? selection.elementId : null;
+  const selRing = selection.kind === "ring" || selection.kind === "element" ? selection.ringId : selection.kind === "multi" ? selection.items[0]!.ringId : null;
+  const selectedIds = new Set(selectedItems(selection).map((i) => i.elementId));
+  /** Shift / ⌘ / Ctrl + click adds to (or removes from) the selection. */
+  const pick = (ev: React.MouseEvent, ringId: string, elementId: string): void => {
+    if (ev.shiftKey || ev.metaKey || ev.ctrlKey) store.toggleSelect(ringId, elementId);
+    else store.select({ kind: "element", ringId, elementId });
+  };
   const rowCls = (active: boolean, hovered: boolean): string => (active ? "bg-select-bg text-select" : hovered ? "bg-panel-2" : "hover:bg-panel-2");
 
   return (
@@ -105,18 +111,18 @@ export function RingTree({ store }: { store: EditorStore }) {
                 </div>
                 <ul>
                   {r.elements.map((e, j) => {
-                    const eSel = e.id === selEl;
+                    const eSel = selectedIds.has(e.id);
                     const eLast = j === r.elements.length - 1;
                     return (
                       <li key={e.id}>
                         <div
-                          className={`group flex items-center gap-1.5 py-0.5 pl-9 pr-2 text-[11px] ${rowCls(eSel, e.id === hoverEl)} ${e.visible ? "" : "opacity-50"}`}
+                          className={`group flex select-none items-center gap-1.5 py-0.5 pl-9 pr-2 text-[11px] ${rowCls(eSel, e.id === hoverEl)} ${e.visible ? "" : "opacity-50"}`}
                           onMouseEnter={() => store.hover(r.id, e.id)}
                           onMouseLeave={() => store.hover(null)}
                         >
                           <span className="text-ink-3">{last ? " " : "│"}</span>
                           <span className="text-ink-3">{eLast ? "└" : "├"}</span>
-                          <button type="button" className="flex min-w-0 flex-1 items-center gap-1.5 text-left" onClick={() => store.select({ kind: "element", ringId: r.id, elementId: e.id })}>
+                          <button type="button" className="flex min-w-0 flex-1 items-center gap-1.5 text-left" onClick={(ev) => pick(ev, r.id, e.id)} title="Shift+クリックで追加選択">
                             <span className="w-4 text-center">{ELEMENT_ICON[e.type]}</span>
                             <span className="truncate">{elementLabel(e)}</span>
                             <span className="ml-auto shrink-0 text-[9px] text-ink-3">
@@ -151,8 +157,8 @@ export function RingTree({ store }: { store: EditorStore }) {
                               <li key={c.id}>
                                 <button
                                   type="button"
-                                  className={`flex w-full items-center gap-1.5 py-0.5 pl-16 pr-2 text-left text-[10px] ${c.id === selEl ? "bg-select-bg text-select" : "hover:bg-panel-2"}`}
-                                  onClick={() => store.select({ kind: "element", ringId: r.id, elementId: c.id })}
+                                  className={`flex w-full select-none items-center gap-1.5 py-0.5 pl-16 pr-2 text-left text-[10px] ${selectedIds.has(c.id) ? "bg-select-bg text-select" : "hover:bg-panel-2"}`}
+                                  onClick={(ev) => pick(ev, r.id, c.id)}
                                 >
                                   <span className="text-ink-3">↳</span>
                                   <span className="w-4 text-center">{ELEMENT_ICON[c.type]}</span>

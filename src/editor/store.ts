@@ -35,7 +35,27 @@ export interface ViewState {
   diff: DiffMode;
 }
 
-export type Selection = { kind: "project" } | { kind: "center" } | { kind: "ring"; ringId: string } | { kind: "element"; ringId: string; elementId: string };
+export interface SelectedItem {
+  ringId: string;
+  elementId: string;
+}
+export type Selection = { kind: "project" } | { kind: "center" } | { kind: "ring"; ringId: string } | { kind: "element"; ringId: string; elementId: string } | { kind: "multi"; items: SelectedItem[] };
+
+/** Elements covered by a selection (one for "element", several for "multi", none otherwise). */
+export function selectedItems(sel: Selection): SelectedItem[] {
+  if (sel.kind === "element") return [{ ringId: sel.ringId, elementId: sel.elementId }];
+  if (sel.kind === "multi") return sel.items;
+  return [];
+}
+
+/** 0 items → project, 1 → element, more → multi (duplicates removed, order kept). */
+export function selectionOf(items: readonly SelectedItem[]): Selection {
+  const seen = new Set<string>();
+  const list = items.filter((i) => (seen.has(i.elementId) ? false : (seen.add(i.elementId), true)));
+  if (list.length === 0) return { kind: "project" };
+  if (list.length === 1) return { kind: "element", ringId: list[0]!.ringId, elementId: list[0]!.elementId };
+  return { kind: "multi", items: list };
+}
 
 export interface Message {
   text: string;
@@ -68,14 +88,20 @@ const COALESCE_MS = 900;
 const HISTORY_LIMIT = 100;
 type Listener = () => void;
 
+function hasElement(project: Project, ringId: string, elementId: string): boolean {
+  const ring = project.rings.find((r) => r.id === ringId);
+  if (!ring) return false;
+  const has = (list: readonly Project["rings"][number]["elements"][number][]): boolean => list.some((e) => e.id === elementId || (e.children ? has(e.children) : false));
+  return has(ring.elements);
+}
+
 function validSelection(sel: Selection, project: Project): Selection {
   if (sel.kind === "ring" && !project.rings.some((r) => r.id === sel.ringId)) return { kind: "project" };
   if (sel.kind === "element") {
-    const ring = project.rings.find((r) => r.id === sel.ringId);
-    if (!ring) return { kind: "project" };
-    const has = (list: readonly Project["rings"][number]["elements"][number][]): boolean => list.some((e) => e.id === sel.elementId || (e.children ? has(e.children) : false));
-    if (!has(ring.elements)) return { kind: "ring", ringId: ring.id };
+    if (!project.rings.some((r) => r.id === sel.ringId)) return { kind: "project" };
+    if (!hasElement(project, sel.ringId, sel.elementId)) return { kind: "ring", ringId: sel.ringId };
   }
+  if (sel.kind === "multi") return selectionOf(sel.items.filter((i) => hasElement(project, i.ringId, i.elementId)));
   return sel;
 }
 
@@ -155,6 +181,18 @@ export class EditorStore {
 
   select(sel: Selection): void {
     this.set({ selection: validSelection(sel, this.state.project), focusedIssueId: null });
+  }
+
+  /** Select a set of elements (0 → project, 1 → element, more → multi). */
+  selectMany(items: readonly SelectedItem[]): void {
+    this.select(selectionOf(items));
+  }
+
+  /** Shift-click: add the element to the selection, or remove it when already selected. */
+  toggleSelect(ringId: string, elementId: string): void {
+    const items = selectedItems(this.state.selection);
+    const next = items.some((i) => i.elementId === elementId) ? items.filter((i) => i.elementId !== elementId) : [...items, { ringId, elementId }];
+    this.select(selectionOf(next));
   }
 
   hover(ringId: string | null, elementId: string | null = null): void {

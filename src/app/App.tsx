@@ -9,7 +9,7 @@ import { PresetDialog } from "../components/dialogs/PresetDialog";
 import { HelpDialog } from "../components/dialogs/HelpDialog";
 import { ShareDialog } from "../components/dialogs/ShareDialog";
 import { ImportReferenceDialog } from "../components/dialogs/ImportReferenceDialog";
-import { actionAddRing, actionDeleteSelected, actionExportSVG, actionOpen, actionSaveJSON } from "../editor/actions";
+import { actionAddRing, actionDeleteSelected, actionDuplicateSelected, actionExportSVG, actionGroupSelected, actionOpen, actionSaveJSON, actionSelectAll, actionUngroupSelected } from "../editor/actions";
 import { findElementDeep, updateElement, updateRing } from "../editor/commands";
 import { saveLocal } from "../editor/persist";
 import { RenderContext } from "../editor/render-context";
@@ -61,6 +61,22 @@ export function App({ store }: { store: EditorStore }) {
         return;
       }
       if (typing) return;
+      if (mod && e.key.toLowerCase() === "a") {
+        e.preventDefault();
+        actionSelectAll(store);
+        return;
+      }
+      if (mod && e.key.toLowerCase() === "g") {
+        e.preventDefault();
+        if (e.shiftKey) actionUngroupSelected(store);
+        else actionGroupSelected(store);
+        return;
+      }
+      if (mod && e.key.toLowerCase() === "d") {
+        e.preventDefault();
+        actionDuplicateSelected(store);
+        return;
+      }
       // Nudge the selection: arrows move (0.5 mm, Shift 2 mm), [ ] rotate (5°, Shift 15°), < > scale (5 %).
       const sel = store.getState().selection;
       if (sel.kind === "element" || sel.kind === "ring") {

@@ -3,6 +3,7 @@
  * DOM stays small (one path per element, not per copy). Runs in a Web Worker in
  * the app and synchronously in tests.
  */
+import { bounds } from "../geometry/vec";
 import type { Project } from "../model/project";
 import { generateMandala, CENTER_ID } from "../geometry/radial/mandala";
 import { buildStencil } from "../geometry/stencil/pipeline";
@@ -23,6 +24,8 @@ export interface ElementPath {
   elementId: string;
   mode: "cut" | "keep";
   d: string;
+  /** Bounding box of each copy / region as [minX, minY, maxX, maxY] (design mm), for marquee selection. */
+  boxes: [number, number, number, number][];
 }
 
 /** Geometry stage (fast): what is drawn. */
@@ -94,11 +97,17 @@ export function computeStaged(project: Project): Staged {
   const stencilGeom = buildStencil(project, geometry);
   const elementPaths: ElementPath[] = [];
   const ringPaths = geometry.rings.map((ring) => {
-    for (const e of ring.elements) elementPaths.push({ ringId: ring.ringId, elementId: e.elementId, mode: e.mode, d: regionsToPath(e.regions) });
+    for (const e of ring.elements) {
+      const boxes: [number, number, number, number][] = e.regions.map((r) => {
+        const b = bounds([r.outer]);
+        return [b.minX, b.minY, b.maxX, b.maxY];
+      });
+      elementPaths.push({ ringId: ring.ringId, elementId: e.elementId, mode: e.mode, d: regionsToPath(e.regions), boxes });
+    }
     return { ringId: ring.ringId, d: regionsToPath(ring.apertures) };
   });
   const centerPath = regionsToPath(geometry.center);
-  if (centerPath) elementPaths.push({ ringId: CENTER_ID, elementId: CENTER_ID, mode: "cut", d: centerPath });
+  if (centerPath) elementPaths.push({ ringId: CENTER_ID, elementId: CENTER_ID, mode: "cut", d: centerPath, boxes: [] });
   const finalFlat = flattenRegions(stencilGeom.final);
   const finalPath = regionsToPath(finalFlat);
   const exported = regionsPathData(stencilGeom.final, { x: 0, y: 0 }, 3);

@@ -217,6 +217,61 @@ export const duplicateElement = (ringId: string, elementId: string): Command => 
     }),
 });
 
+/** Remove several elements (any rings, nested allowed) as one undo step. */
+export const removeElements = (items: readonly { ringId: string; elementId: string }[]): Command => ({
+  label: items.length === 1 ? "要素を削除" : `${items.length} 要素を削除`,
+  apply: (p) => items.reduce((q, it) => removeElement(it.ringId, it.elementId).apply(q), p),
+});
+
+/** Duplicate several top-level elements as one undo step. */
+export const duplicateElements = (items: readonly { ringId: string; elementId: string }[]): Command => ({
+  label: items.length === 1 ? "要素を複製" : `${items.length} 要素を複製`,
+  apply: (p) => items.reduce((q, it) => duplicateElement(it.ringId, it.elementId).apply(q), p),
+});
+
+const r2 = (v: number): number => Math.round(v * 100) / 100;
+
+/**
+ * Replace a top-level compound element by its members, placed where the compound
+ * put them (scale → mirror → rotate → translate applied to each member). The
+ * CompoundMotif is dropped from the project when nothing references it any more.
+ */
+export const ungroupCompound = (ringId: string, elementId: string): Command => ({
+  label: "グループ解除",
+  apply: (p) => {
+    const ring = p.rings.find((r) => r.id === ringId);
+    const el = ring?.elements.find((e) => e.id === elementId);
+    if (!ring || !el || el.type !== "compound") return p;
+    const comp = p.compounds.find((c) => c.id === el.ref);
+    if (!comp) return p;
+    const rad = (el.rotation * Math.PI) / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+    const my = el.mirror ? -1 : 1;
+    const members = comp.elements.map((c) => {
+      const lx = c.x * el.scaleX;
+      const ly = c.y * el.scaleY * my;
+      const out = {
+        ...cloneElement(c),
+        x: r2(el.x + lx * cos - ly * sin),
+        y: r2(el.y + lx * sin + ly * cos),
+        rotation: r2(el.rotation + (el.mirror ? -c.rotation : c.rotation)),
+        scaleX: r2(c.scaleX * el.scaleX),
+        scaleY: r2(c.scaleY * el.scaleY),
+        mirror: c.mirror !== el.mirror,
+      } as SectorElement;
+      return out;
+    });
+    const i = ring.elements.findIndex((e) => e.id === elementId);
+    const elements = ring.elements.slice();
+    elements.splice(i, 1, ...members);
+    const rings = p.rings.map((r) => (r.id === ringId ? { ...r, elements } : r));
+    const refs = (list: readonly SectorElement[]): boolean => list.some((e) => (e.type === "compound" && e.ref === comp.id) || (e.children ? refs(e.children) : false));
+    const stillUsed = rings.some((r) => refs(r.elements)) || p.compounds.some((c) => c.id !== comp.id && refs(c.elements));
+    return { ...p, rings, compounds: stillUsed ? p.compounds : p.compounds.filter((c) => c.id !== comp.id) };
+  },
+});
+
 export const moveElement = (ringId: string, elementId: string, delta: -1 | 1): Command => ({
   label: "要素の順序を変更",
   apply: (p) =>

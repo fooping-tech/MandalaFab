@@ -3,7 +3,8 @@ import type { CanvasApi } from "../app/App";
 import { setBezierPoint, updateElement, updateRing } from "../editor/commands";
 import { contourToPath } from "../editor/pipeline";
 import { useRenderState } from "../editor/render-context";
-import { useEditor, type EditorStore } from "../editor/store";
+import { selectedItems, useEditor, type EditorStore } from "../editor/store";
+import { ContextMenu, type MenuAnchor } from "./ContextMenu";
 import { applyElementTransform, elementTransform, invertElementTransform } from "../geometry/elements/sector";
 import { instanceTransform } from "../geometry/radial/repeat";
 import { applyTransform, invertTransform, pointAngleDeg } from "../geometry/radial/transform";
@@ -29,7 +30,10 @@ function niceStep(scale: number, px: number): number {
 }
 
 type HandleKind = "origin" | "rotate" | "length" | "width" | "ring-radius" | number;
-type DragState = { kind: "pan"; x: number; y: number; cx: number; cy: number; moved: boolean } | { kind: "handle"; ringId: string; elementId: string | null; handle: HandleKind; moved: boolean };
+type DragState =
+  | { kind: "pan"; x: number; y: number; cx: number; cy: number; moved: boolean }
+  | { kind: "handle"; ringId: string; elementId: string | null; handle: HandleKind; moved: boolean }
+  | { kind: "marquee"; sx: number; sy: number; x0: number; y0: number; x1: number; y1: number; shift: boolean; moved: boolean };
 
 const WHEEL_KEY = "mandalafab-wheel-zoom";
 function loadWheelZoom(): boolean {
@@ -65,6 +69,32 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
   const onLeave = useCallback(() => store.hover(null), [store]);
   const pinch = useRef<Map<number, { x: number; y: number }>>(new Map());
   const pinchStart = useRef<{ dist: number; scale: number } | null>(null);
+  const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  const [menu, setMenu] = useState<MenuAnchor | null>(null);
+  const closeMenu = useCallback(() => setMenu(null), []);
+  const spaceDown = useRef(false);
+  const selectedIds = useMemo(() => new Set(selectedItems(selection).map((i) => i.elementId)), [selection]);
+
+  // Space held = pan with the left button (like most vector editors).
+  useEffect(() => {
+    const typing = (t: EventTarget | null): boolean => {
+      const el = t as HTMLElement | null;
+      return !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable);
+    };
+    const down = (e: KeyboardEvent): void => {
+      if (e.key === " " && !typing(e.target)) spaceDown.current = true;
+    };
+    const up = (e: KeyboardEvent): void => {
+      if (e.key === " ") spaceDown.current = false;
+    };
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    window.addEventListener("blur", () => (spaceDown.current = false));
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+    };
+  }, []);
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -168,7 +198,40 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
         return;
       }
     }
+    // Left-drag from empty space = marquee selection. Pan with the middle button, Alt, Space, touch, or from a shape.
+    const onShape = !!target.getAttribute?.("data-ring");
+    const panMode = e.button === 1 || e.altKey || spaceDown.current || e.pointerType === "touch" || onShape || isPreview;
+    if (!panMode) {
+      const p = toDesign(e.clientX, e.clientY);
+      drag.current = { kind: "marquee", sx: e.clientX, sy: e.clientY, x0: p.x, y0: p.y, x1: p.x, y1: p.y, shift: e.shiftKey, moved: false };
+      return;
+    }
     drag.current = { kind: "pan", x: e.clientX, y: e.clientY, cx: v.cx, cy: v.cy, moved: false };
+  };
+
+  /** Elements whose copies touch the rectangle (design mm). */
+  const elementsIn = (x0: number, y0: number, x1: number, y1: number): { ringId: string; elementId: string }[] => {
+    const minX = Math.min(x0, x1), maxX = Math.max(x0, x1), minY = Math.min(y0, y1), maxY = Math.max(y0, y1);
+    const out: { ringId: string; elementId: string }[] = [];
+    for (const ep of render.data.elementPaths) {
+      if (ep.ringId === CENTER_ID) continue;
+      const ring = project.rings.find((r) => r.id === ep.ringId);
+      if (ring && !ring.visible) continue;
+      if (ep.boxes.some((b) => b[0] <= maxX && b[2] >= minX && b[1] <= maxY && b[3] >= minY)) out.push({ ringId: ep.ringId, elementId: ep.elementId });
+    }
+    return out;
+  };
+
+  const onContextMenu = (e: React.MouseEvent): void => {
+    e.preventDefault();
+    if (isPreview) return;
+    const target = e.target as Element;
+    const ringId = target.getAttribute?.("data-ring");
+    const elementId = target.getAttribute?.("data-element");
+    if (ringId === CENTER_ID) store.select({ kind: "center" });
+    else if (ringId && elementId && !selectedIds.has(elementId)) store.select({ kind: "element", ringId, elementId });
+    else if (ringId && !elementId) store.select({ kind: "ring", ringId });
+    setMenu({ x: e.clientX, y: e.clientY });
   };
   const onPointerMove = (e: React.PointerEvent): void => {
     if (pinch.current.has(e.pointerId)) pinch.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -222,6 +285,14 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
       }
       return;
     }
+    if (d.kind === "marquee") {
+      if (!d.moved && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 3) return;
+      d.moved = true;
+      d.x1 = p.x;
+      d.y1 = p.y;
+      setMarquee({ x0: d.x0, y0: d.y0, x1: d.x1, y1: d.y1 });
+      return;
+    }
     const dx = e.clientX - d.x;
     const dy = e.clientY - d.y;
     if (!d.moved && Math.hypot(dx, dy) < 3) return;
@@ -233,14 +304,24 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
     if (pinch.current.size < 2) pinchStart.current = null;
     const d = drag.current;
     drag.current = null;
-    if (d && d.kind === "pan" && !d.moved && e.button === 0) {
+    if (d && d.kind === "marquee") {
+      setMarquee(null);
+      if (d.moved) {
+        const hit = elementsIn(d.x0, d.y0, d.x1, d.y1);
+        store.selectMany(d.shift ? [...selectedItems(selection), ...hit] : hit);
+        return;
+      }
+    }
+    if (d && (d.kind === "pan" || d.kind === "marquee") && !d.moved && e.button === 0) {
       const target = e.target as Element;
       const ringId = target.getAttribute?.("data-ring");
       const elementId = target.getAttribute?.("data-element");
+      const additive = e.shiftKey || e.metaKey || e.ctrlKey;
       if (ringId === CENTER_ID) store.select({ kind: "center" });
+      else if (ringId && elementId && additive) store.toggleSelect(ringId, elementId);
       else if (ringId && elementId) store.select({ kind: "element", ringId, elementId });
       else if (ringId) store.select({ kind: "ring", ringId });
-      else store.select({ kind: "project" });
+      else if (!additive) store.select({ kind: "project" });
     }
   };
 
@@ -266,13 +347,12 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
   const errorIssues = d.issuePaths.filter((i) => i.severity === "error");
   const warnIssues = d.issuePaths.filter((i) => i.severity !== "error");
   const selRingId = selRing?.id ?? null;
-  const selElId = selEl?.id ?? null;
   const isMaterial = view.mode === "material";
   const isPreview = view.mode === "preview";
   const bg = isMaterial ? "#5b6470" : "#e9edf1";
 
   const elementFill = (ep: { ringId: string; elementId: string; mode: "cut" | "keep" }): string => {
-    const selected = ep.elementId === selElId || (selection.kind === "ring" && ep.ringId === selRingId) || (selection.kind === "center" && ep.ringId === CENTER_ID);
+    const selected = selectedIds.has(ep.elementId) || (selection.kind === "ring" && ep.ringId === selRingId) || (selection.kind === "center" && ep.ringId === CENTER_ID);
     const hovered = ep.elementId === hoverEl || (hoverEl === null && ep.ringId === hoverRing);
     if (ep.mode === "keep") return selected ? "#8fc3a5" : hovered ? "#b7dcc5" : "#cfe6d8";
     return selected ? "#2f7bb5" : hovered ? "#5a86ad" : "#3b4f63";
@@ -343,6 +423,7 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
+        onContextMenu={onContextMenu}
         onPointerCancel={onPointerUp}
         onPointerLeave={() => publishCursor(null)}
       >
@@ -424,7 +505,7 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
               <path d={d.finalPath} fillRule="evenodd" fill={isMaterial ? bg : "#111111"} stroke={isMaterial ? "none" : "#d84435"} strokeWidth={Math.max(0.12, px)} />
             )}
             {d.elementPaths.map((ep) => {
-              const active = ep.elementId === selElId || ep.elementId === hoverEl || (hoverEl === null && ep.ringId === hoverRing) || (selection.kind === "ring" && ep.ringId === selRingId);
+              const active = selectedIds.has(ep.elementId) || ep.elementId === hoverEl || (hoverEl === null && ep.ringId === hoverRing) || (selection.kind === "ring" && ep.ringId === selRingId);
               return <ElementPath key={`${ep.ringId}/${ep.elementId}`} ringId={ep.ringId} elementId={ep.elementId} d={ep.d} fill={active ? "#2f7bb5" : "transparent"} fillOpacity={0.35} stroke="none" strokeWidth={0} onEnter={onEnter} onLeave={onLeave} />;
             })}
           </g>
@@ -480,6 +561,22 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
           </g>
         )}
 
+        {marquee && (
+          <rect
+            x={Math.min(marquee.x0, marquee.x1)}
+            y={Math.min(marquee.y0, marquee.y1)}
+            width={Math.abs(marquee.x1 - marquee.x0)}
+            height={Math.abs(marquee.y1 - marquee.y0)}
+            fill="#2f7bb5"
+            fillOpacity={0.12}
+            stroke="#2f7bb5"
+            strokeWidth={px}
+            strokeDasharray={`${4 * px} ${3 * px}`}
+            pointerEvents="none"
+            data-testid="marquee"
+          />
+        )}
+
         <g pointerEvents="none">
           <circle r={3 * px} fill="none" stroke="#c8793f" strokeWidth={px} />
           <line x1={-6 * px} y1={0} x2={6 * px} y2={0} stroke="#c8793f" strokeWidth={px} />
@@ -487,6 +584,7 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
         </g>
       </svg>
 
+      <ContextMenu store={store} at={menu} onClose={closeMenu} fit={fit} />
       <div className="absolute bottom-3 right-3 flex items-center gap-1">
         <button
           type="button"
@@ -531,7 +629,7 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
         {render.stale && <span className="ml-2 text-warn">計算中…</span>}
       </div>
       <div className={`absolute bottom-3 left-8 text-[10px] ${isMaterial ? "text-white/70" : "text-ink-3"}`}>
-        ドラッグ: パン · {wheelZoom ? "ホイール: ズーム · Shift+ホイール: スクロール" : "ホイール: スクロール · ⌘/Ctrl+ホイール: ズーム"} · クリック: 要素選択 · ハンドル: 位置 / 長さ / 幅 / 回転（Shift でスナップ） · 矢印キー: 移動 · [ ]: 回転
+        ドラッグ: 範囲選択（Alt / Space / 中ボタン: パン） · Shift+クリック: 追加選択 · 右クリック: メニュー · {wheelZoom ? "ホイール: ズーム" : "ホイール: スクロール（⌘/Ctrl でズーム）"} · 矢印 / [ ]: 移動・回転
       </div>
     </div>
   );

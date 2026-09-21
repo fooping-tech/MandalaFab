@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { actionAddElement, actionSavePart } from "../editor/actions";
+import { actionAddElement, actionDuplicateSelected, actionDeleteSelected, actionGroupSelected, actionSavePart } from "../editor/actions";
 import {
   addChild,
   addBezierSegment,
@@ -35,7 +35,7 @@ export function Inspector({ store }: { store: EditorStore }) {
   const project = useEditor((s) => s.project);
   const ring = selection.kind === "ring" || selection.kind === "element" ? project.rings.find((r) => r.id === selection.ringId) : undefined;
   const element = selection.kind === "element" && ring ? findElementDeep(ring.elements, selection.elementId) : undefined;
-  const title = element ? "Element Inspector" : ring ? "Ring Inspector" : selection.kind === "center" ? "Center Inspector" : "Mandala Inspector";
+  const title = selection.kind === "multi" ? "Selection" : element ? "Element Inspector" : ring ? "Ring Inspector" : selection.kind === "center" ? "Center Inspector" : "Mandala Inspector";
   return (
     <aside className="flex min-h-0 flex-col border-l border-line bg-panel">
       <div className="panel-title">
@@ -47,10 +47,57 @@ export function Inspector({ store }: { store: EditorStore }) {
         )}
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
-        {element && ring ? <ElementPanel store={store} ring={ring} element={element} /> : ring ? <RingPanel store={store} ring={ring} symmetry={project.symmetry} /> : selection.kind === "center" ? <CenterPanel store={store} center={project.center} /> : <ProjectPanel store={store} />}
+        {selection.kind === "multi" ? <MultiPanel store={store} /> : element && ring ? <ElementPanel store={store} ring={ring} element={element} /> : ring ? <RingPanel store={store} ring={ring} symmetry={project.symmetry} /> : selection.kind === "center" ? <CenterPanel store={store} center={project.center} /> : <ProjectPanel store={store} />}
         <ChecksPanel store={store} />
       </div>
     </aside>
+  );
+}
+
+/** Several elements selected (Shift+click / marquee): batch operations. */
+function MultiPanel({ store }: { store: EditorStore }) {
+  const selection = useEditor((s) => s.selection);
+  const project = useEditor((s) => s.project);
+  if (selection.kind !== "multi") return null;
+  const items = selection.items;
+  const rings = [...new Set(items.map((i) => i.ringId))].map((id) => project.rings.find((r) => r.id === id)).filter((r): r is Ring => !!r);
+  const sameRing = rings.length === 1;
+  const topLevel = sameRing ? items.filter((i) => rings[0]!.elements.some((e) => e.id === i.elementId)).length : 0;
+  return (
+    <>
+      <Section title={`${items.length} 要素を選択中`}>
+        <p className="text-[11px] text-ink-3">{sameRing ? `リング「${rings[0]!.name}」の要素` : `${rings.length} つのリングにまたがる選択`}。Shift+クリックで追加・解除、Esc で解除。</p>
+        <ul className="max-h-40 overflow-auto rounded border border-line bg-paper text-[11px]">
+          {items.map((i) => {
+            const ring = project.rings.find((r) => r.id === i.ringId);
+            const el = ring ? findElementDeep(ring.elements, i.elementId) : undefined;
+            return (
+              <li key={i.elementId} className="flex items-center gap-2 px-2 py-0.5">
+                <button type="button" className="min-w-0 flex-1 truncate text-left hover:text-select" onClick={() => store.select({ kind: "element", ringId: i.ringId, elementId: i.elementId })} title="この要素だけを選択">
+                  {el?.name ?? el?.type ?? i.elementId}
+                </button>
+                <span className="text-[9px] text-ink-3">{ring?.name}</span>
+                <button type="button" className="text-ink-3 hover:text-ink" onClick={() => store.toggleSelect(i.ringId, i.elementId)} title="選択から外す">
+                  ✕
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </Section>
+      <Section title="操作">
+        <div className="flex flex-wrap gap-2">
+          <SmallButton onClick={() => actionGroupSelected(store)} title={sameRing && topLevel >= 2 ? "選択した要素を 1 つの複合モチーフにまとめる (⌘G)" : "同じリング直下の要素を 2 つ以上選ぶとグループ化できます"}>
+            グループ化{sameRing && topLevel >= 2 ? "" : "（同じリング内のみ）"}
+          </SmallButton>
+          <SmallButton onClick={() => actionDuplicateSelected(store)} title="⌘D">複製</SmallButton>
+          <SmallButton danger onClick={() => actionDeleteSelected(store)} title="Delete">
+            削除
+          </SmallButton>
+          <SmallButton onClick={() => store.select({ kind: "project" })}>選択解除</SmallButton>
+        </div>
+      </Section>
+    </>
   );
 }
 

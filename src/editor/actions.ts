@@ -7,7 +7,8 @@ import { exportSVG, projectFromSVG } from "../export/svg";
 import { emptyProject, type Project } from "../model/project";
 import { parseProject, normalizeProject } from "../model/validate";
 import { loadPreset } from "../presets";
-import { addElement, addRing, findElementDeep, insertPartElement, insertPartRing, nextRing, removeElement, removeRing, replaceProject } from "./commands";
+import { addElement, addRing, duplicateElement, duplicateElements, duplicateRing, findElementDeep, insertPartElement, insertPartRing, makeCompound, nextRing, removeElement, removeElements, removeRing, replaceProject, ungroupCompound } from "./commands";
+import { selectedItems } from "./store";
 import { freshIds, parseLibrary, partFromElement, partFromProject, partFromRing, serializeLibrary, type LibraryItem } from "../model/library";
 import { addLibraryItems, getLibrary } from "./library-store";
 import { newElement, type ElementType } from "../model/project";
@@ -131,7 +132,72 @@ export function actionExportParts(store: EditorStore, items: readonly LibraryIte
 export function actionDeleteSelected(store: EditorStore): void {
   const sel = store.getState().selection;
   if (sel.kind === "element") store.execute(removeElement(sel.ringId, sel.elementId));
+  else if (sel.kind === "multi") store.execute(removeElements(sel.items));
   else if (sel.kind === "ring") store.execute(removeRing(sel.ringId));
+}
+
+export function actionDuplicateSelected(store: EditorStore): void {
+  const sel = store.getState().selection;
+  if (sel.kind === "element") store.execute(duplicateElement(sel.ringId, sel.elementId));
+  else if (sel.kind === "multi") store.execute(duplicateElements(sel.items));
+  else if (sel.kind === "ring") store.execute(duplicateRing(sel.ringId));
+}
+
+/** Select every top-level element of every visible ring. */
+export function actionSelectAll(store: EditorStore): void {
+  const { project } = store.getState();
+  store.selectMany(project.rings.filter((r) => r.visible).flatMap((r) => r.elements.map((e) => ({ ringId: r.id, elementId: e.id }))));
+}
+
+/**
+ * Group the selected elements into one compound motif (グループ化). All must be
+ * top-level elements of the same ring. Returns the new compound element id.
+ */
+export function actionGroupSelected(store: EditorStore, name = "Group"): string | null {
+  const { project, selection } = store.getState();
+  const items = selectedItems(selection);
+  if (items.length < 2) {
+    store.notify("グループ化するには要素を 2 つ以上選択してください（Shift+クリックや範囲選択）。", "error");
+    return null;
+  }
+  const ringIds = new Set(items.map((i) => i.ringId));
+  if (ringIds.size > 1) {
+    store.notify("グループ化できるのは同じリング内の要素だけです。", "error");
+    return null;
+  }
+  const ring = project.rings.find((r) => r.id === items[0]!.ringId);
+  if (!ring) return null;
+  const ids = items.map((i) => i.elementId).filter((id) => ring.elements.some((e) => e.id === id));
+  if (ids.length < 2) {
+    store.notify("入れ子の要素はグループ化できません。リング直下の要素を選んでください。", "error");
+    return null;
+  }
+  const before = new Set(ring.elements.map((e) => e.id));
+  store.execute(makeCompound(ring.id, ids, name));
+  const after = store.getState().project.rings.find((r) => r.id === ring.id);
+  const created = after?.elements.find((e) => e.type === "compound" && !before.has(e.id));
+  if (created) store.select({ kind: "element", ringId: ring.id, elementId: created.id });
+  store.notify(`${ids.length} 要素をグループ「${name}」にまとめました（複合モチーフ）。`, "success");
+  return created?.id ?? null;
+}
+
+/** Split the selected compound element back into its members. */
+export function actionUngroupSelected(store: EditorStore): boolean {
+  const { project, selection } = store.getState();
+  if (selection.kind !== "element") return false;
+  const ring = project.rings.find((r) => r.id === selection.ringId);
+  const el = ring?.elements.find((e) => e.id === selection.elementId);
+  if (!ring || !el || el.type !== "compound") {
+    store.notify("グループ解除できるのはリング直下の複合モチーフです。", "error");
+    return false;
+  }
+  const before = new Set(ring.elements.map((e) => e.id));
+  store.execute(ungroupCompound(ring.id, el.id));
+  const after = store.getState().project.rings.find((r) => r.id === ring.id);
+  const members = after?.elements.filter((e) => !before.has(e.id)) ?? [];
+  store.selectMany(members.map((e) => ({ ringId: ring.id, elementId: e.id })));
+  store.notify(`グループを解除しました（${members.length} 要素）。`, "success");
+  return true;
 }
 
 export function actionExportSVG(store: EditorStore, render: RenderData | null): void {
