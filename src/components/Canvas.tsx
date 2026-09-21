@@ -408,7 +408,11 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
       if (!elT || !selEl || !d.elementId) return;
       const s = worldToSector(p);
       if (d.handle === "origin") {
-        store.execute(updateElement(d.ringId, d.elementId, { x: Math.round(s.x * 10) / 10, y: Math.round(s.y * 10) / 10 }, "要素を移動"));
+        // Snap to the sector axis (y = 0) when close: a mirrored ring would otherwise split the
+        // element into a pair as soon as it leaves the axis. Alt disables the snap.
+        const snapPx = coarse ? 14 : 8;
+        const y = !e.altKey && Math.abs(s.y) * v.scale < snapPx ? 0 : s.y;
+        store.execute(updateElement(d.ringId, d.elementId, { x: Math.round(s.x * 10) / 10, y: Math.round(y * 10) / 10 }, "要素を移動"));
       } else if (d.handle === "rotate") {
         // Angle of the pointer around the element origin, minus the automatic radial orientation.
         const radial = selEl.orient === "radial" ? Math.atan2(selEl.y, selEl.x + selRing!.radius) : 0;
