@@ -9,7 +9,7 @@ import { parseProject, normalizeProject } from "../model/validate";
 import { loadPreset } from "../presets";
 import { addElement, addRing, duplicateElement, duplicateElements, duplicateRing, findElementDeep, insertPartElement, insertPartRing, makeCompound, nextRing, removeElement, removeElements, removeRing, replaceProject, ungroupCompound } from "./commands";
 import { selectedItems } from "./store";
-import { freshIds, parseLibrary, partFromElement, partFromProject, partFromRing, serializeLibrary, type LibraryItem } from "../model/library";
+import { freshIds, parseLibrary, partFromElement, partFromElements, partFromProject, partFromRing, serializeLibrary, type LibraryItem } from "../model/library";
 import { addLibraryItems, getLibrary } from "./library-store";
 import { newElement, type ElementType } from "../model/project";
 import { pickFile, safeFileName, saveFile } from "./persist";
@@ -61,6 +61,21 @@ export function actionSavePart(store: EditorStore, name?: string): LibraryItem |
     const n = name ?? window.prompt("パーツ名", el.name ?? el.type);
     if (n === null) return null;
     item = partFromElement(el, project.compounds, n);
+  } else if (selection.kind === "multi") {
+    const ringIds = new Set(selection.items.map((i) => i.ringId));
+    if (ringIds.size > 1) {
+      store.notify("複数の要素をマイパーツに登録するには、同じリング内の要素を選択してください。", "error");
+      return null;
+    }
+    const ring = project.rings.find((r) => r.id === selection.items[0]!.ringId);
+    const els = ring ? selection.items.map((i) => ring.elements.find((e) => e.id === i.elementId)).filter((e): e is NonNullable<typeof e> => !!e) : [];
+    if (els.length === 0) {
+      store.notify("リング直下の要素を選択してください（入れ子の要素はまとめて登録できません）。", "error");
+      return null;
+    }
+    const n = name ?? window.prompt(`パーツ名（${els.length} 要素を 1 つのグループとして登録）`, "Group");
+    if (n === null) return null;
+    item = partFromElements(els, project.compounds, n);
   } else if (selection.kind === "ring") {
     const ring = project.rings.find((r) => r.id === selection.ringId);
     if (!ring) return null;

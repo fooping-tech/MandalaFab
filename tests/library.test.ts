@@ -138,3 +138,41 @@ describe("library store (in-memory fallback without localStorage)", () => {
     expect(getLibrary().some((i) => i.id === a.id)).toBe(false);
   });
 });
+
+describe("registering several elements as one part", () => {
+  it("bundles the selection into a compound part that inserts as a group at the same relative layout", async () => {
+    const { partFromElements } = await import("../src/model/library");
+    const { EditorStore } = await import("../src/editor/store");
+    const { actionSavePart, actionInsertPart } = await import("../src/editor/actions");
+    const p = sampleProject();
+    const ring = p.rings[0]!;
+    const part = partFromElements(ring.elements, p.compounds, "Pair");
+    expect(part.kind).toBe("element");
+    expect(part.data.type).toBe("compound");
+    const group = part.compounds.find((c) => c.id === (part.data as { ref: string }).ref)!;
+    expect(group.elements.length).toBe(2);
+    // centroid of (0,0) and (0,6) → group at (0,3); members at ±3
+    expect(part.data.y).toBe(3);
+    expect(group.elements.map((e) => e.y).sort()).toEqual([-3, 3]);
+    // the leaf's own compound reference is bundled too
+    expect(part.compounds.map((c) => c.id)).toEqual(expect.arrayContaining(["c-inner", "c-outer"]));
+    // via the action on a multi selection, then insert into an empty project
+    setLibrary([]);
+    const store = new EditorStore(p);
+    store.selectMany(ring.elements.map((e) => ({ ringId: ring.id, elementId: e.id })));
+    const saved = actionSavePart(store, "Pair");
+    expect(saved?.kind).toBe("element");
+    expect(getLibrary().length).toBe(1);
+    const target = new EditorStore(emptyProject("t"));
+    actionInsertPart(target, saved!);
+    const tp = target.getState().project;
+    expect(tp.rings.length).toBe(1);
+    expect(tp.rings[0]!.elements[0]!.type).toBe("compound");
+    expect(tp.compounds.length).toBe(3);
+    const stencil = buildStencil(tp, generateMandala(tp));
+    expect(stencil.final.length).toBeGreaterThan(0);
+    // across rings the action refuses
+    store.selectMany([{ ringId: "r1", elementId: "leaf1" }, { ringId: "r1", elementId: "dot1" }]);
+    expect(actionSavePart(store, "x")).not.toBeNull();
+  });
+});

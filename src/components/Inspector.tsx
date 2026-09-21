@@ -91,6 +91,9 @@ function MultiPanel({ store }: { store: EditorStore }) {
             グループ化{sameRing && topLevel >= 2 ? "" : "（同じリング内のみ）"}
           </SmallButton>
           <SmallButton onClick={() => actionDuplicateSelected(store)} title="⌘D">複製</SmallButton>
+          <SmallButton onClick={() => actionSavePart(store)} title={sameRing ? "選択した要素を 1 つのグループとしてマイパーツに登録" : "同じリング内の要素を選ぶと登録できます"}>
+            マイパーツに登録
+          </SmallButton>
           <SmallButton danger onClick={() => actionDeleteSelected(store)} title="Delete">
             削除
           </SmallButton>
@@ -144,8 +147,8 @@ function RingPanel({ store, ring, symmetry }: { store: EditorStore; ring: Ring; 
       <Section title="操作">
         <div className="flex gap-2">
           <SmallButton onClick={() => store.execute(duplicateRing(ring.id))}>複製</SmallButton>
-          <SmallButton onClick={() => actionSavePart(store)} title="このリング（セクタのデザイン）をマイパーツに保存">
-            パーツ保存
+          <SmallButton onClick={() => actionSavePart(store)} title="このリング（セクタのデザイン）をマイパーツに登録">
+            マイパーツに登録
           </SmallButton>
           <SmallButton danger onClick={() => store.execute(removeRing(ring.id))}>
             削除
@@ -273,8 +276,8 @@ function ElementPanel({ store, ring, element: el }: { store: EditorStore; ring: 
           <SmallButton onClick={() => store.execute(makeCompound(ring.id, [el.id], el.name ?? "compound"))} title="この要素を再利用可能な複合モチーフにする">
             複合モチーフ化
           </SmallButton>
-          <SmallButton onClick={() => actionSavePart(store)} title="この要素（入れ子と複合モチーフを含む）をマイパーツに保存">
-            パーツ保存
+          <SmallButton onClick={() => actionSavePart(store)} title="この要素（入れ子と複合モチーフを含む）をマイパーツに登録">
+            マイパーツに登録
           </SmallButton>
           <SmallButton danger onClick={() => store.execute(removeElement(ring.id, el.id))}>
             削除
@@ -384,8 +387,8 @@ function ProjectPanel({ store }: { store: EditorStore }) {
       <Section title="プロジェクト">
         <TextField label="名前" value={project.name} onChange={(name) => store.execute(updateProject({ name }, "名前を変更"))} />
         <div className="flex gap-2">
-          <SmallButton onClick={() => actionSavePart(store)} title="このプロジェクト全体を自分のプリセットとしてマイパーツに保存">
-            マイパーツに保存
+          <SmallButton onClick={() => actionSavePart(store)} title="このプロジェクト全体を自分のプリセットとしてマイパーツに登録">
+            マイパーツに登録
           </SmallButton>
         </div>
         <div>

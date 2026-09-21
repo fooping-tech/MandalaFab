@@ -70,8 +70,8 @@ export function ContextMenu({ store, at, onClose, fit }: { store: EditorStore; a
     items.push({ kind: "item", label: sel.kind === "multi" ? `${picked.length} 要素を複製` : "複製", shortcut: "⌘D", run: wrap(() => actionDuplicateSelected(store)) });
     items.push({ kind: "item", label: "グループ化（複合モチーフ）", shortcut: "⌘G", disabled: !(sameRing && topLevelCount >= 2), run: wrap(() => actionGroupSelected(store)) });
     if (single?.type === "compound" && topLevelSingle) items.push({ kind: "item", label: "グループ解除", shortcut: "⌘⇧G", run: wrap(() => actionUngroupSelected(store)) });
+    items.push({ kind: "item", label: sel.kind === "multi" ? `${picked.length} 要素をマイパーツに登録…` : "マイパーツに登録…", disabled: sel.kind === "multi" && !(sameRing && topLevelCount >= 1), run: wrap(() => actionSavePart(store)) });
     if (sel.kind === "element") {
-      items.push({ kind: "item", label: "パーツとして保存…", run: wrap(() => actionSavePart(store)) });
       if (single && ring) {
         items.push(sep);
         items.push({ kind: "item", label: single.mode === "keep" ? "cut（抜く）に切替" : "keep（残す）に切替", run: wrap(() => store.execute(updateElement(ring.id, single.id, { mode: single.mode === "keep" ? "cut" : "keep" }, "cut/keep 切替"))) });
@@ -86,7 +86,7 @@ export function ContextMenu({ store, at, onClose, fit }: { store: EditorStore; a
   } else if (sel.kind === "ring") {
     const ring = project.rings.find((r) => r.id === sel.ringId);
     items.push({ kind: "item", label: "リングを複製", shortcut: "⌘D", run: wrap(() => actionDuplicateSelected(store)) });
-    items.push({ kind: "item", label: "リングをパーツとして保存…", run: wrap(() => actionSavePart(store)) });
+    items.push({ kind: "item", label: "リングをマイパーツに登録…", run: wrap(() => actionSavePart(store)) });
     if (ring) {
       items.push({ kind: "item", label: "要素をすべて選択", run: wrap(() => store.selectMany(ring.elements.map((e) => ({ ringId: ring.id, elementId: e.id })))) });
       items.push(sep);
@@ -98,7 +98,7 @@ export function ContextMenu({ store, at, onClose, fit }: { store: EditorStore; a
   } else {
     items.push({ kind: "item", label: "リングを追加", shortcut: "N", run: wrap(() => actionAddRing(store)) });
     items.push({ kind: "item", label: "すべての要素を選択", shortcut: "⌘A", run: wrap(() => actionSelectAll(store)) });
-    items.push({ kind: "item", label: "プロジェクトをパーツとして保存…", run: wrap(() => actionSavePart(store)) });
+    items.push({ kind: "item", label: "プロジェクトをマイパーツに登録…", run: wrap(() => actionSavePart(store)) });
     items.push(sep);
     items.push({ kind: "item", label: "全体表示", shortcut: "F", run: wrap(fit) });
     items.push({ kind: "item", label: "元に戻す", shortcut: "⌘Z", disabled: !store.getState().canUndo, run: wrap(() => store.undo()) });

@@ -3,7 +3,7 @@
  * whole projects saved by the user. Pure TS, no DOM. Stored as JSON in the browser
  * and exchangeable as a `.parts.json` file.
  */
-import { newId, type CompoundMotif, type Project, type Ring, type SectorElement } from "./project";
+import { elementDefaults, newId, type CompoundMotif, type Project, type Ring, type SectorElement } from "./project";
 import { normalizeCompound, normalizeElement, normalizeProject, normalizeRing } from "./validate";
 
 export type PartKind = "element" | "ring" | "project";
@@ -76,6 +76,22 @@ const now = (): string => new Date().toISOString();
 
 export function partFromElement(el: SectorElement, compounds: readonly CompoundMotif[], name?: string): ElementPart {
   return { id: newId("p"), kind: "element", name: cleanName(name, el.name ?? el.type), createdAt: now(), compounds: clone(referencedCompounds([el], compounds)), data: clone(el) };
+}
+
+/**
+ * Several elements (same ring) as one element part: they are bundled into a new
+ * compound motif centred on their centroid, so the part inserts as a single group.
+ * The project itself is not changed.
+ */
+export function partFromElements(elements: readonly SectorElement[], compounds: readonly CompoundMotif[], name?: string): ElementPart {
+  if (elements.length === 1) return partFromElement(elements[0]!, compounds, name);
+  const cx = elements.reduce((s, e) => s + e.x, 0) / elements.length;
+  const cy = elements.reduce((s, e) => s + e.y, 0) / elements.length;
+  const r2 = (v: number): number => Math.round(v * 100) / 100;
+  const group: CompoundMotif = { id: newId("c"), name: cleanName(name, "Group"), elements: elements.map((e) => ({ ...clone(e), id: newId("e"), x: r2(e.x - cx), y: r2(e.y - cy) }) as SectorElement) };
+  const el: SectorElement = { ...elementDefaults(), id: newId("e"), type: "compound", name: group.name, ref: group.id, x: r2(cx), y: r2(cy) };
+  const bundled = [group, ...referencedCompounds(elements, compounds).filter((c) => c.id !== group.id)];
+  return { id: newId("p"), kind: "element", name: group.name, createdAt: now(), compounds: clone(bundled), data: el };
 }
 
 export function partFromRing(ring: Ring, compounds: readonly CompoundMotif[], name?: string): RingPart {

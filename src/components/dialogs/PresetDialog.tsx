@@ -104,7 +104,7 @@ function PartsTab({ store, onClose }: { store: EditorStore; onClose: () => void 
       </div>
       {shown.length === 0 ? (
         <div className="rounded-lg border border-dashed border-line px-4 py-8 text-center text-[12px] text-ink-3">
-          まだパーツがありません。要素・リングを選択して Inspector の「パーツ保存」、または上の「保存」ボタンで登録します。
+          まだパーツがありません。要素・リングを選択して右クリックメニューか Inspector の「マイパーツに登録」、または上の「保存」ボタンで登録します。
           <br />
           パーツはこのブラウザに保存されます。他の環境へは「書き出し」の JSON を「読み込み」で取り込んでください。
         </div>
