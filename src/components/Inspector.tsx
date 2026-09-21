@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { actionAddElement, actionDuplicateSelected, actionDeleteSelected, actionGroupSelected, actionSavePart } from "../editor/actions";
+import { actionAddElement, actionDuplicateSelected, actionDeleteSelected, actionGroupSelected, actionSavePart, actionSetLockedSelected, actionSetVisibleSelected } from "../editor/actions";
 import {
   addChild,
   addBezierSegment,
@@ -92,6 +92,10 @@ function MultiPanel({ store }: { store: EditorStore }) {
             グループ化{sameRing && topLevel >= 2 ? "" : "（同じリング内のみ）"}
           </SmallButton>
           <SmallButton onClick={() => actionDuplicateSelected(store)} title="⌘D">複製</SmallButton>
+          <SmallButton onClick={() => actionSetLockedSelected(store, true)} title="キャンバスで選択・移動できなくする">ロック</SmallButton>
+          <SmallButton onClick={() => actionSetLockedSelected(store, false)}>ロック解除</SmallButton>
+          <SmallButton onClick={() => actionSetVisibleSelected(store, false)}>非表示</SmallButton>
+          <SmallButton onClick={() => actionSetVisibleSelected(store, true)}>表示</SmallButton>
           <SmallButton onClick={() => actionSavePart(store)} title={sameRing ? "選択した要素を 1 つのグループとしてマイパーツに登録" : "同じリング内の要素を選ぶと登録できます"}>
             マイパーツに登録
           </SmallButton>
@@ -141,6 +145,7 @@ function RingPanel({ store, ring, symmetry }: { store: EditorStore; ring: Ring; 
         </div>
         <Toggle label="セクタ内ミラー（左右対称）" checked={ring.mirrorLocal} onChange={(mirrorLocal) => set({ mirrorLocal })} title="y ≥ 0 側にデザインした要素をセクタ軸で鏡映して両側に配置" />
         <Toggle label="表示" checked={ring.visible} onChange={(visible) => set({ visible })} />
+        <Toggle label="ロック（キャンバスで選択・移動できない）" checked={!!ring.locked} onChange={(locked) => set({ locked })} title="ロック中もツリーと Inspector からは編集できます" />
       </Section>
       <Section title="要素を追加">
         <AddElementMenu onPick={(t) => actionAddElement(store, t)} />
@@ -191,6 +196,8 @@ function ElementPanel({ store, ring, element: el }: { store: EditorStore; ring: 
           ]}
         />
         <Toggle label="表示" checked={el.visible} onChange={(visible) => set({ visible })} />
+        <Toggle label="ロック（キャンバスで選択・移動できない）" checked={!!el.locked} onChange={(locked) => set({ locked })} title="ロック中もツリーと Inspector からは編集できます" />
+        {(ring.locked || el.locked) && <p className="text-[10px] text-warn">{ring.locked ? "リングがロックされています。" : "この要素はロックされています。"}キャンバスのハンドルと矢印キーは無効です。</p>}
       </Section>
       <Section title="配置（セクタ座標）">
         <div className="grid grid-cols-2 gap-2">

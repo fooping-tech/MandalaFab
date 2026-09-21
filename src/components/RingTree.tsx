@@ -105,6 +105,9 @@ export function RingTree({ store }: { store: EditorStore }) {
                       ✕
                     </button>
                   </span>
+                  <button type="button" className={`w-5 text-center hover:text-ink ${r.locked ? "text-warn" : "text-ink-3 opacity-40 group-hover:opacity-100"}`} title={r.locked ? "ロック解除" : "ロック（キャンバスで選択・移動できなくする）"} data-testid={`lock-ring-${r.id}`} onClick={() => store.execute(updateRing(r.id, { locked: !r.locked }, r.locked ? "リングをロック解除" : "リングをロック"))}>
+                    {r.locked ? "🔒" : "🔓"}
+                  </button>
                   <button type="button" className="w-5 text-center text-ink-3 hover:text-ink" title={r.visible ? "非表示にする" : "表示する"} onClick={() => store.execute(updateRing(r.id, { visible: !r.visible }, "表示切替"))}>
                     {r.visible ? "◉" : "○"}
                   </button>
@@ -147,7 +150,10 @@ export function RingTree({ store }: { store: EditorStore }) {
                               ✕
                             </button>
                           </span>
-                          <button type="button" className="w-5 text-center text-ink-3 hover:text-ink" onClick={() => store.execute(updateElement(r.id, e.id, { visible: !e.visible }, "表示切替"))}>
+                          <button type="button" className={`w-5 text-center hover:text-ink ${e.locked ? "text-warn" : "text-ink-3 opacity-40 group-hover:opacity-100"}`} title={e.locked ? "ロック解除" : "ロック（キャンバスで選択・移動できなくする）"} data-testid={`lock-el-${e.id}`} onClick={() => store.execute(updateElement(r.id, e.id, { locked: !e.locked }, e.locked ? "ロック解除" : "ロック"))}>
+                            {e.locked ? "🔒" : "🔓"}
+                          </button>
+                          <button type="button" className="w-5 text-center text-ink-3 hover:text-ink" title={e.visible ? "非表示にする" : "表示する"} onClick={() => store.execute(updateElement(r.id, e.id, { visible: !e.visible }, "表示切替"))}>
                             {e.visible ? "◉" : "○"}
                           </button>
                         </div>

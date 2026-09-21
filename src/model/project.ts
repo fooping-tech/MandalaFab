@@ -52,6 +52,8 @@ export interface ElementBase {
   type: ElementType;
   name?: string;
   visible: boolean;
+  /** Locked objects cannot be selected or moved on the canvas (still editable from the tree / Inspector). */
+  locked?: boolean;
   /** Local position in the sector frame (mm). */
   x: number;
   y: number;
@@ -141,6 +143,8 @@ export interface Ring {
   id: string;
   name: string;
   visible: boolean;
+  /** Locked objects cannot be selected or moved on the canvas (still editable from the tree / Inspector). */
+  locked?: boolean;
   /** Base radius of the sector frame origin (mm). */
   radius: number;
   /** Number of sectors around the circle (usually symmetry or a multiple). */

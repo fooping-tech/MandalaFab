@@ -248,6 +248,16 @@ export function useEditor<T>(selector: (s: EditorState) => T): T {
   return useSyncExternalStore(store.subscribe, () => selector(store.getState()), () => selector(store.getState()));
 }
 
+/** True when the element (or its ring) is locked: not selectable / movable on the canvas. */
+export function isLocked(project: Project, ringId: string, elementId?: string | null): boolean {
+  const ring = project.rings.find((r) => r.id === ringId);
+  if (!ring) return false;
+  if (ring.locked) return true;
+  if (!elementId) return false;
+  const find = (list: readonly Project["rings"][number]["elements"][number][]): boolean => list.some((e) => (e.id === elementId ? e.locked === true : e.children ? find(e.children) : false));
+  return find(ring.elements);
+}
+
 /** Convenience selectors. */
 export const selectedRingId = (s: EditorState): string | null => (s.selection.kind === "ring" || s.selection.kind === "element" ? s.selection.ringId : null);
 export const selectedElementId = (s: EditorState): string | null => (s.selection.kind === "element" ? s.selection.elementId : null);

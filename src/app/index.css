@@ -272,6 +272,25 @@ dialog::backdrop {
   }
 }
 
+/* Always-visible "?" at the top right of the editor. */
+.help-btn {
+  width: 34px;
+  height: 34px;
+  margin: 0 6px;
+  border-radius: 50%;
+  border: 2px solid var(--color-select);
+  color: var(--color-select);
+  background: var(--color-paper);
+  font-weight: 700;
+  font-size: 18px;
+  line-height: 1;
+  flex: none;
+}
+.help-btn:hover {
+  background: var(--color-select);
+  color: #fff;
+}
+
 .field-input {
     min-height: 34px;
     font-size: 14px; /* iOS: ≥ 16px avoids zoom-on-focus; 14 keeps the layout, zoom is disabled via viewport */

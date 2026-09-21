@@ -107,7 +107,6 @@ export function Toolbar({ store, openDialog, canvasApi }: Props) {
     { kind: "btn", key: "fit", icon: "⛶", label: "全体", onClick: () => canvasApi?.fit(), title: "全体表示 (F)", priority: 6 },
     { kind: "sep", key: "s5" },
     { kind: "btn", key: "share", icon: "⇪", label: "共有URL", onClick: () => openDialog("share"), priority: 7 },
-    { kind: "btn", key: "help", icon: "?", label: "ヘルプ", onClick: () => openDialog("help"), priority: 5 },
   ];
 
   const btnW = mobile ? BTN_W_MOBILE : BTN_W_DESKTOP;
@@ -192,6 +191,9 @@ export function Toolbar({ store, openDialog, canvasApi }: Props) {
         <div className="mr-2 hidden max-w-[200px] truncate text-[12px] text-ink-2 lg:block" title={name}>
           {name}
         </div>
+        <button type="button" className="help-btn" onClick={() => openDialog("help")} title="使い方（ファイルの開く・保存・SVG 書き出し、操作一覧）" aria-label="使い方" data-testid="help-button">
+          ?
+        </button>
         <Btn icon="⬢" label="SVG出力" onClick={() => actionExportSVG(store, render.data)} primary title="レーザー加工用SVGを書き出す (⌘⇧S)" />
       </div>
     </header>

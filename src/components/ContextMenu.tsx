@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { actionAddRing, actionDeleteSelected, actionDuplicateSelected, actionGroupSelected, actionSavePart, actionSelectAll, actionUngroupSelected } from "../editor/actions";
-import { updateElement, updateRing } from "../editor/commands";
+import { actionAddRing, actionDeleteSelected, actionDuplicateSelected, actionGroupSelected, actionSavePart, actionSelectAll, actionSetLockedSelected, actionSetVisibleSelected, actionUngroupSelected } from "../editor/actions";
+import { updateElement, updateElements, updateRing } from "../editor/commands";
 import { selectedItems, useEditor, type EditorStore } from "../editor/store";
 
 export interface MenuAnchor {
@@ -76,8 +76,14 @@ export function ContextMenu({ store, at, onClose, fit }: { store: EditorStore; a
         items.push(sep);
         items.push({ kind: "item", label: single.mode === "keep" ? "cut（抜く）に切替" : "keep（残す）に切替", run: wrap(() => store.execute(updateElement(ring.id, single.id, { mode: single.mode === "keep" ? "cut" : "keep" }, "cut/keep 切替"))) });
         items.push({ kind: "item", label: single.mirror ? "反転を戻す" : "左右反転", run: wrap(() => store.execute(updateElement(ring.id, single.id, { mirror: !single.mirror }, "反転"))) });
-        items.push({ kind: "item", label: single.visible ? "非表示にする" : "表示する", run: wrap(() => store.execute(updateElement(ring.id, single.id, { visible: !single.visible }, "表示切替"))) });
+        items.push({ kind: "item", label: single.visible ? "非表示にする" : "表示する", run: wrap(() => actionSetVisibleSelected(store, !single.visible)) });
+        items.push({ kind: "item", label: single.locked ? "ロック解除" : "ロック（選択・移動を禁止）", run: wrap(() => actionSetLockedSelected(store, !single.locked)) });
       }
+    } else {
+      items.push(sep);
+      items.push({ kind: "item", label: `${picked.length} 要素を非表示にする`, run: wrap(() => actionSetVisibleSelected(store, false)) });
+      items.push({ kind: "item", label: `${picked.length} 要素をロック`, run: wrap(() => actionSetLockedSelected(store, true)) });
+      items.push({ kind: "item", label: `${picked.length} 要素のロックを解除`, run: wrap(() => actionSetLockedSelected(store, false)) });
     }
     items.push(sep);
     if (ring) items.push({ kind: "item", label: `リング「${ring.name}」を選択`, run: wrap(() => store.select({ kind: "ring", ringId: ring.id })) });
@@ -92,12 +98,14 @@ export function ContextMenu({ store, at, onClose, fit }: { store: EditorStore; a
       items.push(sep);
       items.push({ kind: "item", label: ring.mirrorLocal ? "セクタ内ミラーを解除" : "セクタ内ミラーにする", run: wrap(() => store.execute(updateRing(ring.id, { mirrorLocal: !ring.mirrorLocal }))) });
       items.push({ kind: "item", label: ring.visible ? "非表示にする" : "表示する", run: wrap(() => store.execute(updateRing(ring.id, { visible: !ring.visible }, "表示切替"))) });
+      items.push({ kind: "item", label: ring.locked ? "リングのロックを解除" : "リングをロック（要素ごと選択・移動を禁止）", run: wrap(() => actionSetLockedSelected(store, !ring.locked)) });
     }
     items.push(sep);
     items.push({ kind: "item", label: "リングを削除", shortcut: "Delete", danger: true, run: wrap(() => actionDeleteSelected(store)) });
   } else {
     items.push({ kind: "item", label: "リングを追加", shortcut: "N", run: wrap(() => actionAddRing(store)) });
     items.push({ kind: "item", label: "すべての要素を選択", shortcut: "⌘A", run: wrap(() => actionSelectAll(store)) });
+    if (project.rings.some((r) => r.locked || r.elements.some((e) => e.locked))) items.push({ kind: "item", label: "すべてのロックを解除", run: wrap(() => { for (const r of project.rings) { if (r.locked) store.execute(updateRing(r.id, { locked: false }, "ロック解除")); const ids = r.elements.filter((e) => e.locked).map((e) => ({ ringId: r.id, elementId: e.id })); if (ids.length > 0) store.execute(updateElements(ids, { locked: false }, "ロック解除")); } }) });
     items.push({ kind: "item", label: "プロジェクトをマイパーツに登録…", run: wrap(() => actionSavePart(store)) });
     items.push(sep);
     items.push({ kind: "item", label: "全体表示", shortcut: "F", run: wrap(fit) });

@@ -6,7 +6,7 @@ import { conditionStroke, polylineLength } from "../geometry/stroke";
 import { newElement } from "../model/project";
 import { contourToPath } from "../editor/pipeline";
 import { useRenderState } from "../editor/render-context";
-import { selectedItems, useEditor, type EditorStore } from "../editor/store";
+import { isLocked, selectedItems, useEditor, type EditorStore } from "../editor/store";
 import { ContextMenu, type MenuAnchor } from "./ContextMenu";
 import { applyElementTransform, elementTransform, invertElementTransform } from "../geometry/elements/sector";
 import { instanceTransform } from "../geometry/radial/repeat";
@@ -91,6 +91,19 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
     longPress.current = null;
   };
   const selectedIds = useMemo(() => new Set(selectedItems(selection).map((i) => i.elementId)), [selection]);
+  /** Element ids that cannot be picked on the canvas (own lock or ring lock). */
+  const lockedIds = useMemo(() => {
+    const out = new Set<string>();
+    const walk = (list: readonly (typeof project.rings)[number]["elements"][number][], ringLocked: boolean): void => {
+      for (const e of list) {
+        if (ringLocked || e.locked) out.add(e.id);
+        if (e.children) walk(e.children, ringLocked || !!e.locked);
+      }
+    };
+    for (const r of project.rings) walk(r.elements, !!r.locked);
+    return out;
+  }, [project.rings]);
+  const lockedRingIds = useMemo(() => new Set(project.rings.filter((r) => r.locked).map((r) => r.id)), [project.rings]);
 
   // Touch: keep the browser from scrolling / zooming the page while gesturing on the canvas
   // (touch-action: none is not honoured everywhere, notably older iOS Safari for pinch).
@@ -250,8 +263,8 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
           const ringId = el?.getAttribute?.("data-ring");
           const elementId = el?.getAttribute?.("data-element");
           if (ringId === CENTER_ID) store.select({ kind: "center" });
-          else if (ringId && elementId && !selectedIds.has(elementId)) store.select({ kind: "element", ringId, elementId });
-          else if (ringId && !elementId) store.select({ kind: "ring", ringId });
+          else if (ringId && elementId && !lockedIds.has(elementId) && !selectedIds.has(elementId)) store.select({ kind: "element", ringId, elementId });
+          else if (ringId && !elementId && !lockedRingIds.has(ringId)) store.select({ kind: "ring", ringId });
           setMenu({ x, y });
         }, 550),
       };
@@ -275,9 +288,12 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
     }
     // Left-drag from empty space = marquee selection. Pan with the middle button, Alt, Space, touch, or from a shape.
     // Remember what was under the pointer: pointer capture retargets pointerup to the svg.
-    const hitRing = target.getAttribute?.("data-ring") ?? null;
-    const hitElement = target.getAttribute?.("data-element") ?? null;
-    const onShape = !!hitRing;
+    const rawRing = target.getAttribute?.("data-ring") ?? null;
+    const rawElement = target.getAttribute?.("data-element") ?? null;
+    const shapeLocked = !!rawElement && lockedIds.has(rawElement);
+    const hitRing = shapeLocked ? null : rawRing;
+    const hitElement = shapeLocked ? null : rawElement;
+    const onShape = !!rawRing;
     const panMode = e.button === 1 || e.altKey || spaceDown.current || (e.pointerType === "touch" && !boxSelect) || onShape || isPreview;
     if (!panMode) {
       const p = toDesign(e.clientX, e.clientY);
@@ -343,6 +359,7 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
       if (ep.ringId === CENTER_ID) continue;
       const ring = project.rings.find((r) => r.id === ep.ringId);
       if (ring && !ring.visible) continue;
+      if (lockedIds.has(ep.elementId)) continue;
       if (ep.boxes.some((b) => b[0] <= maxX && b[2] >= minX && b[1] <= maxY && b[3] >= minY)) out.push({ ringId: ep.ringId, elementId: ep.elementId });
     }
     return out;
@@ -355,8 +372,9 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
     const ringId = target.getAttribute?.("data-ring");
     const elementId = target.getAttribute?.("data-element");
     if (ringId === CENTER_ID) store.select({ kind: "center" });
+    else if (ringId && elementId && lockedIds.has(elementId)) store.notify("ロックされた要素です。左のツリーから選択・ロック解除できます。");
     else if (ringId && elementId && !selectedIds.has(elementId)) store.select({ kind: "element", ringId, elementId });
-    else if (ringId && !elementId) store.select({ kind: "ring", ringId });
+    else if (ringId && !elementId && !lockedRingIds.has(ringId)) store.select({ kind: "ring", ringId });
     setMenu({ x: e.clientX, y: e.clientY });
   };
   const onPointerMove = (e: React.PointerEvent): void => {
@@ -514,16 +532,17 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
     return { axis: line(0), edgeA: line(half), edgeB: line(-half), radius: selRing.radius, mirror: selRing.mirrorLocal };
   }, [selRing, view.guides, view.sectorGuide, sheetW, sheetH]);
 
+  const selLocked = !!selRing && isLocked(project, selRing.id, selEl?.id ?? null);
   const handles = useMemo(() => {
-    if (!selEl || !sectorT || !elT) return null;
+    if (!selEl || !sectorT || !elT || selLocked) return null;
     const origin = applyTransform({ x: selEl.x, y: selEl.y }, sectorT);
     const axisTip = applyTransform(applyElementTransform({ x: selEl.length / 2, y: 0 }, elT), sectorT);
     const widthTip = applyTransform(applyElementTransform({ x: 0, y: selEl.width / 2 }, elT), sectorT);
     const rotateTip = applyTransform(applyElementTransform({ x: selEl.length / 2 + 6 / v.scale + 2, y: 0 }, elT), sectorT);
     const points = selEl.type === "bezier" ? selEl.points.map((p) => applyTransform(applyElementTransform(p, elT), sectorT)) : [];
     return { origin, axisTip, widthTip, rotateTip, points };
-  }, [selEl, sectorT, elT, v.scale]);
-  const ringHandle = useMemo(() => (selRing && sectorT && !selEl ? applyTransform({ x: 0, y: 0 }, sectorT) : null), [selRing, sectorT, selEl]);
+  }, [selEl, sectorT, elT, v.scale, selLocked]);
+  const ringHandle = useMemo(() => (selRing && sectorT && !selEl && !selLocked ? applyTransform({ x: 0, y: 0 }, sectorT) : null), [selRing, sectorT, selEl, selLocked]);
 
   return (
     <div ref={wrapRef} className="relative min-h-0 min-w-0 select-none overflow-hidden" style={{ touchAction: "none", background: bg }}>

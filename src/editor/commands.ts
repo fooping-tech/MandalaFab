@@ -210,6 +210,12 @@ export const duplicateElement = (ringId: string, elementId: string): Command => 
     }),
 });
 
+/** Patch several elements (any rings, nested allowed) as one undo step, e.g. lock / hide. */
+export const updateElements = (items: readonly { ringId: string; elementId: string }[], patch: Partial<SectorElement>, label = "要素を編集"): Command => ({
+  label,
+  apply: (p) => items.reduce((q, it) => mapElement(q, it.ringId, it.elementId, (e) => ({ ...e, ...patch }) as SectorElement), p),
+});
+
 /** Remove several elements (any rings, nested allowed) as one undo step. */
 export const removeElements = (items: readonly { ringId: string; elementId: string }[]): Command => ({
   label: items.length === 1 ? "要素を削除" : `${items.length} 要素を削除`,

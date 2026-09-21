@@ -3,7 +3,7 @@ import "../src/geometry/motifs";
 import { defaultRing, emptyProject, newElement, type Project } from "../src/model/project";
 import { normalizeProject } from "../src/model/validate";
 import { generateMandala } from "../src/geometry/radial/mandala";
-import { buildOutput, closestPoints, generateConnectors, materialComponents, materialCoversCenter, strayComponents } from "../src/geometry/stencil/output";
+import { buildOutput, closestPoints, detectSymmetry, generateConnectors, materialComponents, materialCoversCenter, strayComponents } from "../src/geometry/stencil/output";
 import { difference, flattenRegions, regionArea, union } from "../src/geometry/boolean";
 import { sheetRegion } from "../src/geometry/stencil/sheet";
 import { validateStencil } from "../src/validation";
@@ -193,4 +193,63 @@ describe("presets in positive mode", () => {
     const waste = flattenRegions(difference([sheetRegion(p.sheet)], material));
     expect(regionArea(waste)).toBeGreaterThan(regionArea(material));
   }, 120000);
+});
+
+describe("positive connectors keep the design's symmetry", () => {
+  const rot = (p: { x: number; y: number }, a: number) => ({ x: p.x * Math.cos(a) - p.y * Math.sin(a), y: p.x * Math.sin(a) + p.y * Math.cos(a) });
+  const key = (p: { x: number; y: number }, q: { x: number; y: number }): string => {
+    const k = (v: { x: number; y: number }) => `${Math.round(v.x * 10)},${Math.round(v.y * 10)}`;
+    const a = k(p), b = k(q);
+    return a < b ? `${a}|${b}` : `${b}|${a}`;
+  };
+  // rounding to 0.1 mm can straddle a boundary; fall back to a distance scan
+  const near = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y) < 0.05;
+  const lookup = (set: Set<string>, list: readonly { from: { x: number; y: number }; to: { x: number; y: number } }[], p: { x: number; y: number }, q: { x: number; y: number }): boolean =>
+    set.has(key(p, q)) || list.some((c) => (near(c.from, p) && near(c.to, q)) || (near(c.from, q) && near(c.to, p)));
+
+  it("derives the rotational order and mirror axis from the rings", () => {
+    const p = petals();
+    const sym = detectSymmetry(p);
+    expect(sym.order).toBe(8);
+    expect(sym.mirrorAxis).toBeNull(); // leaves ring is not mirrorLocal
+    p.rings[1]!.mirrorLocal = true;
+    p.rings[0]!.mirrorLocal = true;
+    expect(detectSymmetry(p).mirrorAxis).not.toBeNull();
+    const dense = loadPreset("dense-floral");
+    const sd = detectSymmetry(dense);
+    expect(sd.order).toBe(6); // one band repeats 6 times, the others 12
+    expect(sd.mirrorAxis).not.toBeNull();
+    // an unsymmetric extra ring breaks both
+    dense.rings.push(defaultRing({ id: "odd", radius: 20, repeat: 1, mirrorLocal: false, elements: [newElement("dot")] }));
+    expect(detectSymmetry(dense).order).toBe(1);
+    expect(detectSymmetry(dense).mirrorAxis).toBeNull();
+  });
+
+  it("every connector has all its rotated (and mirrored) images among the connectors", () => {
+    for (const [id, order] of [["ethnic-border", 8], ["dense-floral", 6]] as const) {
+      const p = loadPreset(id);
+      p.output = { ...p.output, polarity: "positive" };
+      // a sheet large enough that nothing is clipped: the square sheet edge would break the symmetry
+      p.sheet = { ...p.sheet, width: 240, height: 240 };
+      const g = generateMandala(p);
+      const out = buildOutput(p, g);
+      expect(out.overflow).toBe(false);
+      const sym = detectSymmetry(p);
+      expect(sym.order).toBe(order);
+      // (the total need not be a multiple of the order: a band on a symmetry axis is its own image)
+      expect(out.components.length).toBe(1);
+      const set = new Set(out.connectors.map((c) => key(c.from, c.to)));
+      const step = (2 * Math.PI) / order;
+      let missing = 0;
+      for (const c of out.connectors) {
+        for (let k = 1; k < order; k++) if (!lookup(set, out.connectors, rot(c.from, k * step), rot(c.to, k * step))) missing++;
+        if (sym.mirrorAxis !== null) {
+          const ax = sym.mirrorAxis;
+          const mir = (q: { x: number; y: number }) => { const ux = Math.cos(ax), uy = Math.sin(ax); const d = q.x * ux + q.y * uy; return { x: 2 * d * ux - q.x, y: 2 * d * uy - q.y }; };
+          if (!lookup(set, out.connectors, mir(c.from), mir(c.to))) missing++;
+        }
+      }
+      expect(missing).toBe(0);
+    }
+  }, 180000);
 });

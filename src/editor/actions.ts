@@ -7,7 +7,7 @@ import { exportSVG, projectFromSVG } from "../export/svg";
 import { emptyProject, type Project } from "../model/project";
 import { parseProject, normalizeProject } from "../model/validate";
 import { loadPreset } from "../presets";
-import { addElement, addRing, duplicateElement, duplicateElements, duplicateRing, findElementDeep, insertPartElement, insertPartRing, makeCompound, nextRing, removeElement, removeElements, removeRing, replaceProject, ungroupCompound } from "./commands";
+import { addElement, addRing, duplicateElement, duplicateElements, duplicateRing, findElementDeep, insertPartElement, insertPartRing, makeCompound, nextRing, removeElement, removeElements, removeRing, replaceProject, ungroupCompound, updateElement, updateElements, updateRing } from "./commands";
 import { selectedItems } from "./store";
 import { freshIds, parseLibrary, partFromElement, partFromElements, partFromProject, partFromRing, serializeLibrary, type LibraryItem } from "../model/library";
 import { addLibraryItems, getLibrary } from "./library-store";
@@ -151,6 +151,26 @@ export function actionDeleteSelected(store: EditorStore): void {
   else if (sel.kind === "ring") store.execute(removeRing(sel.ringId));
 }
 
+/** Lock or unlock the selection (element / multi / ring). Locked objects stay out of canvas selection and dragging. */
+export function actionSetLockedSelected(store: EditorStore, locked: boolean): void {
+  const sel = store.getState().selection;
+  const label = locked ? "ロック" : "ロック解除";
+  if (sel.kind === "element") store.execute(updateElement(sel.ringId, sel.elementId, { locked }, label));
+  else if (sel.kind === "multi") store.execute(updateElements(sel.items, { locked }, `${sel.items.length} 要素を${label}`));
+  else if (sel.kind === "ring") store.execute(updateRing(sel.ringId, { locked }, `リングを${label}`));
+  else return;
+  store.notify(locked ? "ロックしました（キャンバスでは選択・移動できません。左のツリーから解除できます）。" : "ロックを解除しました。");
+}
+
+/** Show or hide the selection (element / multi / ring). */
+export function actionSetVisibleSelected(store: EditorStore, visible: boolean): void {
+  const sel = store.getState().selection;
+  const label = visible ? "表示" : "非表示";
+  if (sel.kind === "element") store.execute(updateElement(sel.ringId, sel.elementId, { visible }, `要素を${label}`));
+  else if (sel.kind === "multi") store.execute(updateElements(sel.items, { visible }, `${sel.items.length} 要素を${label}`));
+  else if (sel.kind === "ring") store.execute(updateRing(sel.ringId, { visible }, `リングを${label}`));
+}
+
 export function actionDuplicateSelected(store: EditorStore): void {
   const sel = store.getState().selection;
   if (sel.kind === "element") store.execute(duplicateElement(sel.ringId, sel.elementId));
@@ -161,7 +181,7 @@ export function actionDuplicateSelected(store: EditorStore): void {
 /** Select every top-level element of every visible ring. */
 export function actionSelectAll(store: EditorStore): void {
   const { project } = store.getState();
-  store.selectMany(project.rings.filter((r) => r.visible).flatMap((r) => r.elements.map((e) => ({ ringId: r.id, elementId: e.id }))));
+  store.selectMany(project.rings.filter((r) => r.visible && !r.locked).flatMap((r) => r.elements.filter((e) => !e.locked).map((e) => ({ ringId: r.id, elementId: e.id }))));
 }
 
 /**

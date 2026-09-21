@@ -16,7 +16,7 @@ import { findElementDeep, updateElement, updateRing } from "../editor/commands";
 import { saveLocal } from "../editor/persist";
 import { RenderContext } from "../editor/render-context";
 import { useRender } from "../editor/use-render";
-import { useEditor, type EditorStore, type ViewMode } from "../editor/store";
+import { isLocked, useEditor, type EditorStore, type ViewMode } from "../editor/store";
 
 export type DialogName = "generate" | "presets" | "parts" | "help" | "share" | "import" | null;
 
@@ -83,7 +83,7 @@ export function App({ store }: { store: EditorStore }) {
       }
       // Nudge the selection: arrows move (0.5 mm, Shift 2 mm), [ ] rotate (5°, Shift 15°), < > scale (5 %).
       const sel = store.getState().selection;
-      if (sel.kind === "element" || sel.kind === "ring") {
+      if ((sel.kind === "element" || sel.kind === "ring") && !isLocked(store.getState().project, sel.ringId, sel.kind === "element" ? sel.elementId : null)) {
         const ring = store.getState().project.rings.find((r) => r.id === sel.ringId);
         const el = sel.kind === "element" && ring ? findElementDeep(ring.elements, sel.elementId) : undefined;
         const stepMm = e.shiftKey ? 2 : 0.5;

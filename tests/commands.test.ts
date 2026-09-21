@@ -115,3 +115,34 @@ describe("group / ungroup", () => {
     expect(p4.compounds.length).toBe(0);
   });
 });
+
+describe("lock / hide", () => {
+  it("locks cascade from ring to elements, batch updates hit nested elements, and normalize keeps the flags", async () => {
+    const { isLocked } = await import("../src/editor/store");
+    const { updateElements, updateRing } = await import("../src/editor/commands");
+    const { actionSetLockedSelected, actionSetVisibleSelected } = await import("../src/editor/actions");
+    const { normalizeProject } = await import("../src/model/validate");
+    const store = new EditorStore(project());
+    expect(isLocked(store.getState().project, "r1", "a")).toBe(false);
+    store.execute(updateElements([{ ringId: "r1", elementId: "c1" }, { ringId: "r2", elementId: "d" }], { locked: true }, "lock"));
+    let p = store.getState().project;
+    expect(isLocked(p, "r1", "c1")).toBe(true);
+    expect(isLocked(p, "r1", "c")).toBe(false);
+    expect(isLocked(p, "r2", "d")).toBe(true);
+    store.execute(updateRing("r1", { locked: true }));
+    p = store.getState().project;
+    expect(isLocked(p, "r1", "a")).toBe(true);
+    expect(isLocked(p, "r1")).toBe(true);
+    store.undo();
+    store.selectMany([{ ringId: "r1", elementId: "a" }, { ringId: "r1", elementId: "b" }]);
+    actionSetLockedSelected(store, true);
+    actionSetVisibleSelected(store, false);
+    p = store.getState().project;
+    expect(p.rings[0]!.elements.filter((e) => e.locked).map((e) => e.id).sort()).toEqual(["a", "b", "c"].filter((id) => id !== "c"));
+    expect(p.rings[0]!.elements.filter((e) => !e.visible).map((e) => e.id)).toEqual(["a", "b"]);
+    const round = normalizeProject(JSON.parse(JSON.stringify(p)));
+    expect(round.rings[0]!.elements[0]!.locked).toBe(true);
+    expect(round.rings[0]!.elements[0]!.visible).toBe(false);
+    expect(normalizeProject({ rings: [{ elements: [{ type: "dot" }] }] }).rings[0]!.elements[0]!.locked).toBe(false);
+  });
+});
