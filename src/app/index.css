@@ -112,10 +112,16 @@ dialog::backdrop {
 }
 
 .tool-btn {
-  @apply flex flex-col items-center justify-center gap-0.5 rounded-md px-2 text-[10.5px] leading-tight text-ink-2 hover:bg-panel-2 hover:text-ink disabled:opacity-40 disabled:hover:bg-transparent;
-  min-width: 50px;
+  @apply flex flex-col items-center justify-center gap-0.5 rounded-md px-1 text-[10.5px] leading-tight text-ink-2 hover:bg-panel-2 hover:text-ink disabled:opacity-40 disabled:hover:bg-transparent;
+  width: 64px;
+  min-width: 64px;
   height: 52px;
   white-space: nowrap;
+}
+.tool-btn > span:not(.icon) {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .tool-btn .icon {
   font-size: 20px;
@@ -143,6 +149,7 @@ dialog::backdrop {
 /* Phone layout: icon-only toolbar that scrolls sideways, bottom bar with safe area. */
 @media (max-width: 860px) {
   .tool-btn {
+    width: 44px;
     min-width: 44px;
     height: 44px;
     padding-left: 4px;
@@ -156,13 +163,6 @@ dialog::backdrop {
   }
   .toolbar {
     height: 52px;
-    overflow-x: auto;
-    overflow-y: hidden;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-  }
-  .toolbar::-webkit-scrollbar {
-    display: none;
   }
   .field-input {
     min-height: 34px;

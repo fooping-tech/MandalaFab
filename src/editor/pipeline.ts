@@ -134,6 +134,16 @@ export function computeStaged(project: Project): Staged {
   return { stencil, validate };
 }
 
+/** Validation stage alone (used by the validation worker): geometry + stencil + checks. */
+export function computeValidation(project: Project): ValidationRender {
+  const t1 = now();
+  const geometry = generateMandala(project);
+  const stencilGeom = buildStencil(project, geometry);
+  const validation = validateStencil({ geometry, stencil: stencilGeom, constraints: project.constraints, sheet: project.sheet });
+  const issuePaths = validation.issues.filter((i) => i.contours.length > 0).map((i) => ({ id: i.id, severity: i.severity, d: contoursToPath(i.contours) }));
+  return { validation, issuePaths, computeMs: now() - t1 };
+}
+
 /** Full synchronous render (tests, thumbnails, export). */
 export function computeRender(project: Project): RenderData {
   const staged = computeStaged(project);

@@ -105,20 +105,12 @@ export const addRing = (ring: Ring, index?: number): Command => ({
   },
 });
 
-/** A new ring placed outside the current outermost ring, seeded with a teardrop. */
+/** A new empty ring placed outside the current outermost ring. */
 export function nextRing(project: Project): Ring {
   const outer = project.rings.reduce((m, r) => Math.max(m, r.radius + 10), project.center.type === "none" ? 8 : project.center.outerRadius + 4);
   const limit = Math.min(project.sheet.width, project.sheet.height) / 2 - 6;
   const radius = Math.max(8, Math.min(limit - 6, outer + 10));
-  const repeat = project.symmetry;
-  const W = 2 * Math.PI * radius * (1 / repeat);
-  const L = Math.min(16, Math.max(6, limit - radius));
-  return defaultRing({
-    name: `Ring ${project.rings.length + 1}`,
-    radius: Math.round(radius),
-    repeat,
-    elements: [newElement("teardrop", { name: "teardrop", length: Math.round(L), width: Math.round(Math.min(W * 0.35, L * 0.5) * 2) / 2 })],
-  });
+  return defaultRing({ name: `Ring ${project.rings.length + 1}`, radius: Math.round(radius), repeat: project.symmetry, elements: [] });
 }
 
 export const removeRing = (id: string): Command => ({ label: "リングを削除", apply: (p) => ({ ...p, rings: p.rings.filter((r) => r.id !== id) }) });

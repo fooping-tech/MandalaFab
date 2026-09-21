@@ -1,6 +1,8 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CanvasApi } from "../app/App";
-import { setBezierPoint, updateElement, updateRing } from "../editor/commands";
+import { addElement, addRing, nextRing, setBezierPoint, updateElement, updateRing } from "../editor/commands";
+import { cubicsToPoints, fitClosedPolygon, fitCurve, simplifyPolyline } from "../import/bezier-fit";
+import { newElement } from "../model/project";
 import { contourToPath } from "../editor/pipeline";
 import { useRenderState } from "../editor/render-context";
 import { selectedItems, useEditor, type EditorStore } from "../editor/store";
@@ -34,7 +36,8 @@ type HandleKind = "origin" | "rotate" | "length" | "width" | "ring-radius" | num
 type DragState =
   | { kind: "pan"; x: number; y: number; cx: number; cy: number; moved: boolean; hitRing: string | null; hitElement: string | null }
   | { kind: "handle"; ringId: string; elementId: string | null; handle: HandleKind; moved: boolean }
-  | { kind: "marquee"; sx: number; sy: number; x0: number; y0: number; x1: number; y1: number; shift: boolean; moved: boolean; hitRing: string | null; hitElement: string | null };
+  | { kind: "marquee"; sx: number; sy: number; x0: number; y0: number; x1: number; y1: number; shift: boolean; moved: boolean; hitRing: string | null; hitElement: string | null }
+  | { kind: "draw"; points: { x: number; y: number }[] };
 
 const WHEEL_KEY = "mandalafab-wheel-zoom";
 function loadWheelZoom(): boolean {
@@ -79,11 +82,36 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
   /** Touch: one-finger drag selects a rectangle instead of panning. */
   const [boxSelect, setBoxSelect] = useState(false);
   const longPress = useRef<{ timer: number; x: number; y: number; pointerId: number } | null>(null);
+  /** Pen / finger drawing: strokes become Bézier elements of the selected ring. */
+  const [drawMode, setDrawMode] = useState(false);
+  const [stroke, setStroke] = useState<{ x: number; y: number }[] | null>(null);
   const cancelLongPress = (): void => {
     if (longPress.current) window.clearTimeout(longPress.current.timer);
     longPress.current = null;
   };
   const selectedIds = useMemo(() => new Set(selectedItems(selection).map((i) => i.elementId)), [selection]);
+
+  // Touch: keep the browser from scrolling / zooming the page while gesturing on the canvas
+  // (touch-action: none is not honoured everywhere, notably older iOS Safari for pinch).
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const onTouchStart = (e: TouchEvent): void => {
+      if (e.touches.length > 1) e.preventDefault();
+    };
+    const onTouchMove = (e: TouchEvent): void => e.preventDefault();
+    const onGesture = (e: Event): void => e.preventDefault();
+    el.addEventListener("touchstart", onTouchStart, { passive: false });
+    el.addEventListener("touchmove", onTouchMove, { passive: false });
+    el.addEventListener("gesturestart", onGesture);
+    el.addEventListener("gesturechange", onGesture);
+    return () => {
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("gesturestart", onGesture);
+      el.removeEventListener("gesturechange", onGesture);
+    };
+  }, []);
 
   // Space held = pan with the left button (like most vector editors).
   useEffect(() => {
@@ -228,6 +256,14 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
       };
     }
     const target = e.target as Element;
+    // Pen / finger drawing takes priority over handles and selection.
+    if (drawMode && e.button === 0) {
+      cancelLongPress();
+      const p = toDesign(e.clientX, e.clientY);
+      drag.current = { kind: "draw", points: [p] };
+      setStroke([p]);
+      return;
+    }
     const handle = target.getAttribute?.("data-handle");
     if (handle && selRing && e.button === 0) {
       const kind: HandleKind = handle === "origin" || handle === "rotate" || handle === "length" || handle === "width" || handle === "ring-radius" ? handle : Number(handle);
@@ -248,6 +284,53 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
       return;
     }
     drag.current = { kind: "pan", x: e.clientX, y: e.clientY, cx: v.cx, cy: v.cy, moved: false, hitRing, hitElement };
+  };
+
+  /**
+   * Turn a drawn polyline (design mm) into a Bézier element of the selected ring
+   * (or the last ring, or a new ring at the stroke's radius). The stroke is mapped
+   * into the sector copy it was drawn in, so it appears where the pen went.
+   */
+  const finishStroke = (raw: { x: number; y: number }[]): void => {
+    if (raw.length < 3) return;
+    const eps = Math.max(0.15, 0.8 / v.scale);
+    const pts = simplifyPolyline(raw, eps);
+    let length = 0;
+    for (let i = 1; i < pts.length; i++) length += Math.hypot(pts[i]!.x - pts[i - 1]!.x, pts[i]!.y - pts[i - 1]!.y);
+    if (pts.length < 2 || length < 2) return;
+    const first = pts[0]!;
+    const last = pts[pts.length - 1]!;
+    const closed = length > 8 && Math.hypot(first.x - last.x, first.y - last.y) < Math.max(2.5, 12 / v.scale);
+    const err = Math.max(0.2, 1.2 / v.scale);
+    const bez = closed ? fitClosedPolygon(pts, err) : cubicsToPoints(fitCurve(pts, err));
+    if (bez.length < 4) return;
+    const cxw = pts.reduce((a, q) => a + q.x, 0) / pts.length;
+    const cyw = pts.reduce((a, q) => a + q.y, 0) / pts.length;
+    let ring = selRing ?? project.rings[project.rings.length - 1];
+    if (!ring) {
+      ring = { ...nextRing(project), name: "Drawn", radius: Math.round(Math.hypot(cxw, cyw)), mirrorLocal: false };
+      store.execute(addRing(ring));
+    }
+    // Sector copy the stroke was drawn in.
+    const step = 360 / Math.max(1, ring.repeat);
+    let k = Math.round((pointAngleDeg({ x: cxw, y: cyw }) - ring.phase) / step);
+    k = ((k % ring.repeat) + ring.repeat) % ring.repeat;
+    const T = instanceTransform(k, { count: ring.repeat, radius: ring.radius, phaseDeg: ring.phase, rotationDeg: 0, rotationMode: "radial", direction: "outward", stagger: 0 });
+    const local = bez.map((q) => invertTransform(q, T));
+    const anchors = local.filter((_, i) => i % 3 === 0);
+    const cx = anchors.reduce((a, q) => a + q.x, 0) / anchors.length;
+    const cy = anchors.reduce((a, q) => a + q.y, 0) / anchors.length;
+    const r2 = (n: number): number => Math.round(n * 100) / 100;
+    const el = newElement("bezier", {
+      name: closed ? "drawn shape" : "drawn stroke",
+      x: r2(cx),
+      y: r2(cy),
+      points: local.map((q) => ({ x: r2(q.x - cx), y: r2(q.y - cy) })),
+      closed,
+      strokeWidth: closed ? 0 : Math.max(1, project.constraints.minFeatureWidth * 1.5),
+    });
+    store.execute(addElement(ring.id, el));
+    store.select({ kind: "element", ringId: ring.id, elementId: el.id });
   };
 
   /** Elements whose copies touch the rectangle (design mm). */
@@ -330,6 +413,14 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
       }
       return;
     }
+    if (d.kind === "draw") {
+      const last = d.points[d.points.length - 1]!;
+      if (Math.hypot(p.x - last.x, p.y - last.y) * v.scale >= 1.5) {
+        d.points.push(p);
+        setStroke(d.points.slice());
+      }
+      return;
+    }
     if (d.kind === "marquee") {
       if (!d.moved && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 3) return;
       d.moved = true;
@@ -350,6 +441,11 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
     if (pinch.current.size < 2) pinchStart.current = null;
     const d = drag.current;
     drag.current = null;
+    if (d && d.kind === "draw") {
+      setStroke(null);
+      finishStroke(d.points);
+      return;
+    }
     if (d && d.kind === "marquee") {
       setMarquee(null);
       if (d.moved) {
@@ -463,7 +559,7 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
       )}
       <svg
         className="absolute"
-        style={{ left: view.rulers ? RULER : 0, top: view.rulers ? RULER : 0 }}
+        style={{ left: view.rulers ? RULER : 0, top: view.rulers ? RULER : 0, touchAction: "none", cursor: drawMode ? "crosshair" : undefined }}
         width={vw}
         height={vh}
         viewBox={viewBox}
@@ -471,6 +567,7 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onContextMenu={onContextMenu}
+        data-draw-mode={drawMode ? "1" : undefined}
         onPointerCancel={onPointerUp}
         onPointerLeave={() => publishCursor(null)}
       >
@@ -572,7 +669,7 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
         )}
 
         {/* Handles of the selected element (copy 0). */}
-        {handles && !isPreview && (
+        {handles && !isPreview && !drawMode && (
           <g>
             <line x1={handles.origin.x} y1={handles.origin.y} x2={handles.axisTip.x} y2={handles.axisTip.y} stroke="#2f7bb5" strokeWidth={px} pointerEvents="none" />
             {handles.points.length > 0 && (
@@ -608,6 +705,7 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
           </g>
         )}
 
+        {stroke && stroke.length > 1 && <path d={stroke.map((q, i) => `${i ? "L" : "M"}${q.x} ${q.y}`).join("")} fill="none" stroke="#c8793f" strokeWidth={1.8 * px} strokeLinecap="round" strokeLinejoin="round" pointerEvents="none" data-testid="stroke" />}
         {marquee && (
           <rect
             x={Math.min(marquee.x0, marquee.x1)}
@@ -633,6 +731,9 @@ export function Canvas({ store, onApi }: { store: EditorStore; onApi: (api: Canv
 
       <ContextMenu store={store} at={menu} onClose={closeMenu} fit={fit} />
       <div className="absolute bottom-3 right-3 flex items-center gap-1">
+        <button type="button" className={`canvas-btn text-[10px] ${drawMode ? "border-accent bg-accent text-white" : ""}`} onClick={() => setDrawMode((m) => !m)} title="描く: ペン・指・マウスでなぞった線を Bézier 要素にする（始点に戻ると閉じた形）" data-testid="draw-mode">
+          {drawMode ? "✎ 描く: ON" : "✎ 描く"}
+        </button>
         {coarse && (
           <button type="button" className={`canvas-btn text-[10px] ${boxSelect ? "border-select text-select" : ""}`} onClick={() => setBoxSelect((b) => !b)} title="1 本指ドラッグを範囲選択にする（オフでパン）" data-testid="box-select">
             {boxSelect ? "⬚ 範囲選択: ON" : "⬚ 範囲選択"}

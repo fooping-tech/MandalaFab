@@ -11,13 +11,22 @@ import { Dialog } from "./Dialog";
 
 export type PresetTab = "builtin" | "parts";
 
-function projectThumb(p: Project): { path: string; bridges: string; viewBox: string; subpaths: number } {
+interface ThumbData {
+  path: string;
+  bridges: string;
+  viewBox: string;
+  subpaths: number;
+  /** Element parts: rotate so the sector's +x (outward) points up, like the top of the mandala. */
+  rotate?: boolean;
+}
+
+function projectThumb(p: Project): ThumbData {
   const r = computeStaged(p).stencil;
   return { path: r.finalPath, bridges: r.bridgePath, viewBox: `${-p.sheet.width / 2} ${-p.sheet.height / 2} ${p.sheet.width} ${p.sheet.height}`, subpaths: r.counts.subpaths };
 }
 
 /** Thumbnail data for a library part: element → one sector, ring → full ring, project → stencil. */
-function partThumb(item: LibraryItem): { path: string; bridges: string; viewBox: string; subpaths: number } {
+function partThumb(item: LibraryItem): ThumbData {
   if (item.kind === "project") return projectThumb(item.data);
   if (item.kind === "element") {
     const ring = defaultRing({ radius: 40, repeat: 1, mirrorLocal: false, elements: [item.data] });
@@ -26,8 +35,9 @@ function partThumb(item: LibraryItem): { path: string; bridges: string; viewBox:
     for (const r of res.cuts) for (const p of r.outer) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y); }
     if (!Number.isFinite(minX)) { minX = 30; maxX = 50; minY = -10; maxY = 10; }
     const size = Math.max(maxX - minX, maxY - minY, 4) * 1.2;
-    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
-    return { path: regionsToPath(res.cuts), bridges: "", viewBox: `${cx - size / 2} ${cy - size / 2} ${size} ${size}`, subpaths: res.cuts.length };
+    // rotate(-90): (x, y) → (y, -x), so the box becomes [minY..maxY] × [-maxX..-minX]
+    const cx = (minY + maxY) / 2, cy = -(minX + maxX) / 2;
+    return { path: regionsToPath(res.cuts), bridges: "", viewBox: `${cx - size / 2} ${cy - size / 2} ${size} ${size}`, subpaths: res.cuts.length, rotate: true };
   }
   const ring = item.data;
   const reach = ring.elements.reduce((m, e) => Math.max(m, Math.abs(e.x) + e.length + e.width), 10);
@@ -42,12 +52,14 @@ function partThumb(item: LibraryItem): { path: string; bridges: string; viewBox:
   return projectThumb(p);
 }
 
-function ThumbSvg({ data }: { data: { path: string; bridges: string; viewBox: string; subpaths: number } }) {
+function ThumbSvg({ data }: { data: ThumbData }) {
   return (
     <>
       <svg viewBox={data.viewBox} className="h-40 w-full rounded bg-white">
-        <path d={data.path} fillRule="evenodd" fill="#2b3a48" />
-        {data.bridges && <path d={data.bridges} fill="#f6b26b" />}
+        <g transform={data.rotate ? "rotate(-90)" : undefined}>
+          <path d={data.path} fillRule="evenodd" fill="#2b3a48" />
+          {data.bridges && <path d={data.bridges} fill="#f6b26b" />}
+        </g>
       </svg>
       <div className="mt-0.5 text-right text-[9px] text-ink-3">{data.subpaths} paths</div>
     </>
